@@ -42,6 +42,9 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
+    import {
+      getFirestore, collection, getDocs, doc, setDoc, deleteDoc, writeBatch
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyAzEmPXSJs2i1OZqTkwE1cSOR7GQ0gUDFo",
@@ -55,6 +58,10 @@
 
     const app = initializeApp(firebaseConfig);
     const analytics = getAnalytics(app);
+    const cloudDB = getFirestore(app);
+
+    window.cloudDB = cloudDB;
+    window.cloudFns = { collection, getDocs, doc, setDoc, deleteDoc, writeBatch };
   </script>
 </head>
 <body class="bg-slate-100 font-sans text-slate-800 antialiased min-h-screen flex flex-col">
@@ -80,6 +87,9 @@
                 <span id="dbStatusBadge" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-900 text-emerald-200">
                     <span class="w-2 h-2 mr-1.5 bg-emerald-400 rounded-full animate-pulse"></span> IndexedDB Ready
                 </span>
+                <button id="btnSaveCloud" onclick="saveAllToCloud()" class="bg-teal-700 hover:bg-teal-600 text-white px-3 py-1.5 rounded-lg border border-teal-600 transition flex items-center gap-1.5 text-xs">
+                    <i class="fa-solid fa-cloud-arrow-up"></i> <span>Save to Cloud</span>
+                </button>
                 <button id="btnQuickBackup" onclick="exportBackupExcel()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5 text-xs">
                     <i class="fa-solid fa-download"></i> <span class="hidden sm:inline">Quick Backup</span>
                 </button>
@@ -606,6 +616,9 @@
                             <div class="p-3 bg-blue-100 text-blue-600 rounded-lg w-fit"><i class="fa-solid fa-download text-xl"></i></div>
                             <h3 class="font-bold text-slate-800 text-sm">Export Full Database</h3>
                             <p class="text-xs text-slate-600">Downloads an Excel workbook containing all Accommodation Establishment (AEs) records, Same-Day Visitor (TAss) records, and backup information.</p>
+                            <button onclick="saveAllToCloud()" class="w-full bg-teal-700 hover:bg-teal-600 text-white text-xs font-semibold py-2.5 rounded-lg transition mb-2">
+                                <i class="fa-solid fa-cloud-arrow-up mr-1.5"></i> Save All Data to Cloud
+                            </button>
                             <button onclick="exportBackupExcel()" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold py-2.5 rounded-lg transition">
                                 <i class="fa-solid fa-file-export mr-1.5"></i> Download Backup File
                             </button>
@@ -949,17 +962,17 @@
          * INITIALIZATION & INDEXEDDB STORAGE SETUP
          */
         window.onload = function() {
-            initIndexedDB().then(() => {
-                loadAllRecords().then(() => {
-                    if (aeRecords.length === 0 && tassRecords.length === 0) {
-                        preloadSampleData();
-                    } else {
-                        refreshAllViews();
-                    }
-                });
+            initIndexedDB().then(async () => {
+                await loadAllRecords();
+                const cloudLoaded = await loadAllFromCloud();
+                if (!cloudLoaded && aeRecords.length === 0 && tassRecords.length === 0) {
+                    await preloadSampleData();
+                } else {
+                    refreshAllViews();
+                }
             }).catch(err => {
-                console.error("IndexedDB load failed, falling back to local memory:", err);
-                showToast("IndexedDB Initialization Error. Falling back to local storage.", "warning");
+                console.error("Database initialization failed:", err);
+                showToast("Database initialization error. Please reload the page.", "danger");
             });
 
             // Mobile menu toggle listener
@@ -1049,6 +1062,128 @@
         }
 
         /**
+         * SHARED CLOUD STORAGE
+         * IndexedDB is the local cache; Firestore is the shared copy used by all browsers.
+         */
+        function cloudDocId(type, r) {
+            const parts = type === "aes"
+                ? [r.province, r.municipality, r.year, r.month, r.establishment]
+                : [r.province, r.municipality, r.year, r.month, r.attraction];
+            return parts.map(v => String(v ?? "").trim().toLowerCase())
+                .join("__").replace(/[^a-z0-9_-]+/g, "_").slice(0, 500);
+        }
+
+        function updateCloudStatus(label) {
+            const badge = document.getElementById("dbStatusBadge");
+            if (!badge) return;
+            const good = label === "Cloud Synced" || label === "Cloud Saved";
+            badge.className = `inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${good ? "bg-emerald-900 text-emerald-200" : "bg-amber-900 text-amber-200"}`;
+            badge.innerHTML = `<span class="w-2 h-2 mr-1.5 ${good ? "bg-emerald-400" : "bg-amber-400"} rounded-full"></span> ${label}`;
+        }
+
+        async function loadAllFromCloud() {
+            try {
+                if (!window.cloudDB || !window.cloudFns) return false;
+                const { collection, getDocs } = window.cloudFns;
+                const [aeSnap, tassSnap] = await Promise.all([
+                    getDocs(collection(window.cloudDB, "tourism_ae_records")),
+                    getDocs(collection(window.cloudDB, "tourism_tass_records"))
+                ]);
+                const cloudAEs = aeSnap.docs.map(d => {
+                    const r = { ...d.data() };
+                    delete r.cloudUpdatedAt; delete r.localId;
+                    return r;
+                });
+                const cloudTAss = tassSnap.docs.map(d => {
+                    const r = { ...d.data() };
+                    delete r.cloudUpdatedAt; delete r.localId;
+                    return r;
+                });
+
+                if (cloudAEs.length || cloudTAss.length) {
+                    await clearStore("aes");
+                    await clearStore("tass");
+                    for (const r of cloudAEs) await putRecordToStore("aes", r);
+                    for (const r of cloudTAss) await putRecordToStore("tass", r);
+                    await loadAllRecords();
+                    updateCloudStatus("Cloud Synced");
+                    showToast(`Cloud data loaded: ${cloudAEs.length + cloudTAss.length} records.`, "success");
+                    return true;
+                }
+                updateCloudStatus("Cloud Empty");
+                return false;
+            } catch (err) {
+                console.warn("Cloud load skipped:", err);
+                updateCloudStatus("Local Only");
+                return false;
+            }
+        }
+
+        async function saveSingleToCloud(type, record) {
+            try {
+                if (!window.cloudDB || !window.cloudFns) return;
+                const { collection, doc, setDoc } = window.cloudFns;
+                const name = type === "aes" ? "tourism_ae_records" : "tourism_tass_records";
+                await setDoc(doc(collection(window.cloudDB, name), cloudDocId(type, record)), {
+                    ...record, localId: record.id ?? null, cloudUpdatedAt: new Date().toISOString()
+                });
+                updateCloudStatus("Cloud Saved");
+            } catch (err) {
+                console.warn("Single-record cloud save failed:", err);
+                showToast("Record saved locally, but cloud save failed.", "warning");
+                updateCloudStatus("Local Only");
+            }
+        }
+
+        async function deleteSingleFromCloud(type, record) {
+            try {
+                if (!window.cloudDB || !window.cloudFns) return;
+                const { collection, doc, deleteDoc } = window.cloudFns;
+                const name = type === "aes" ? "tourism_ae_records" : "tourism_tass_records";
+                await deleteDoc(doc(collection(window.cloudDB, name), cloudDocId(type, record)));
+                updateCloudStatus("Cloud Saved");
+            } catch (err) {
+                console.warn("Cloud delete failed:", err);
+                showToast("Record deleted locally, but cloud delete failed.", "warning");
+            }
+        }
+
+        async function saveAllToCloud() {
+            const btn = document.getElementById("btnSaveCloud");
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>Saving...</span>'; }
+            try {
+                if (!window.cloudDB || !window.cloudFns) throw new Error("Cloud database is not available.");
+                await loadAllRecords();
+                const { collection, doc, writeBatch } = window.cloudFns;
+                const ops = [];
+                aeRecords.forEach(r => ops.push({
+                    ref: doc(collection(window.cloudDB, "tourism_ae_records"), cloudDocId("aes", r)),
+                    data: { ...r, localId: r.id ?? null, cloudUpdatedAt: new Date().toISOString() }
+                }));
+                tassRecords.forEach(r => ops.push({
+                    ref: doc(collection(window.cloudDB, "tourism_tass_records"), cloudDocId("tass", r)),
+                    data: { ...r, localId: r.id ?? null, cloudUpdatedAt: new Date().toISOString() }
+                }));
+                for (let i = 0; i < ops.length; i += 450) {
+                    const batch = writeBatch(window.cloudDB);
+                    ops.slice(i, i + 450).forEach(op => batch.set(op.ref, op.data));
+                    await batch.commit();
+                }
+                updateCloudStatus("Cloud Saved");
+                showToast(`Cloud save complete: ${ops.length} records saved.`, "success");
+            } catch (err) {
+                console.error("Cloud save failed:", err);
+                const msg = err.code === "permission-denied"
+                    ? "Firestore permission denied. Please check your Firebase Firestore rules."
+                    : err.message;
+                updateCloudStatus("Cloud Error");
+                showToast("Cloud save failed: " + msg, "danger");
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> <span>Save to Cloud</span>'; }
+            }
+        }
+
+        /**
          * DEMO SAMPLE DATA INITIALIZATION
          */
         async function preloadSampleData() {
@@ -1078,6 +1213,7 @@
                 await clearStore("aes");
                 await clearStore("tass");
                 await preloadSampleData();
+                await saveAllToCloud();
             }
         }
 
@@ -1438,6 +1574,7 @@
 
             await putRecordToStore("aes", record);
             await loadAllRecords();
+            await saveSingleToCloud("aes", record);
             closeModal('modalAE');
             refreshAllViews();
             showToast("Accommodation Establishment record saved successfully.", "success");
@@ -1466,7 +1603,9 @@
 
         async function deleteAERecord(id) {
             if (confirm("Are you sure you want to delete this AE record?")) {
+                const deleted = aeRecords.find(r => r.id === id);
                 await deleteRecordFromStore("aes", id);
+                if (deleted) await deleteSingleFromCloud("aes", deleted);
                 await loadAllRecords();
                 refreshAllViews();
                 showToast("AE Record deleted.", "info");
@@ -1609,6 +1748,7 @@
 
             await putRecordToStore("tass", record);
             await loadAllRecords();
+            await saveSingleToCloud("tass", record);
             closeModal('modalTAss');
             refreshAllViews();
             showToast("Same-Day Visitor record saved successfully.", "success");
@@ -1638,7 +1778,9 @@
 
         async function deleteTAssRecord(id) {
             if (confirm("Are you sure you want to delete this TAss record?")) {
+                const deleted = tassRecords.find(r => r.id === id);
                 await deleteRecordFromStore("tass", id);
+                if (deleted) await deleteSingleFromCloud("tass", deleted);
                 await loadAllRecords();
                 refreshAllViews();
                 showToast("TAss Record deleted.", "info");
@@ -1805,6 +1947,7 @@
                 await putRecordToStore("aes", item.record);
             }
             await loadAllRecords();
+            await saveAllToCloud();
             closeModal('modalBulkAE');
             refreshAllViews();
             showToast(`Bulk Import Complete! Added/Updated ${importCount} AE records.`, "success");
@@ -1931,6 +2074,7 @@
                 await putRecordToStore("tass", item.record);
             }
             await loadAllRecords();
+            await saveAllToCloud();
             closeModal('modalBulkTAss');
             refreshAllViews();
             showToast(`Bulk Import Complete! Added/Updated ${importCount} TAss records.`, "success");
@@ -2352,8 +2496,9 @@
                 }
 
                 await loadAllRecords();
+                await saveAllToCloud();
                 refreshAllViews();
-                showToast("Database successfully restored from Excel!", "success");
+                showToast("Database restored from Excel and saved to cloud!", "success");
             } catch (err) {
                 showToast("Failed to restore database: " + err.message, "danger");
             } finally {
