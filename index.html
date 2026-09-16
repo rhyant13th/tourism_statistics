@@ -1,0 +1,2533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tourism Statistics Data Banking System</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Excel workbook support (XLSX) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        navy: { 700: '#1e293b', 800: '#0f172a', 900: '#020617' },
+                        teal: { 500: '#14b8a6', 600: '#0d9488', 700: '#0f766e' }
+                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background: white; color: black; }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- Top Header -->
+    <header class="bg-navy-900 text-white shadow-md sticky top-0 z-30 no-print">
+        <div class="px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <button id="mobileMenuBtn" class="lg:hidden text-slate-300 hover:text-white focus:outline-none">
+                    <i class="fa-solid fa-bars text-xl"></i>
+                </button>
+                <div class="flex items-center space-x-2">
+                    <div class="p-2 bg-teal-600 rounded-lg">
+                        <i class="fa-solid fa-chart-line text-lg text-white"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-lg leading-tight">Tourism Data Banking System</h1>
+                        <p class="text-xs text-teal-400 font-medium">Provincial & Municipal Tourism Statistics Portal</p>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center space-x-3 text-xs md:text-sm">
+                <span id="dbStatusBadge" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-900 text-emerald-200">
+                    <span class="w-2 h-2 mr-1.5 bg-emerald-400 rounded-full animate-pulse"></span> IndexedDB Ready
+                </span>
+                <button id="btnQuickBackup" onclick="exportBackupExcel()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5 text-xs">
+                    <i class="fa-solid fa-download"></i> <span class="hidden sm:inline">Quick Backup</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div class="flex-1 flex overflow-hidden">
+        <!-- Sidebar Navigation -->
+        <aside id="sidebar" class="w-64 bg-navy-800 text-slate-300 flex-shrink-0 hidden lg:block no-print flex flex-col justify-between overflow-y-auto custom-scrollbar">
+            <div class="p-4 space-y-6">
+                <!-- Navigation Links -->
+                <nav class="space-y-1">
+                    <p class="px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Main Navigation</p>
+                    <a href="#dashboard" onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item flex items-center px-3 py-2.5 rounded-lg text-sm font-medium bg-teal-600 text-white transition">
+                        <i class="fa-solid fa-gauge w-6 text-center text-base"></i> <span class="ml-2">Dashboard</span>
+                    </a>
+                </nav>
+
+                <div class="space-y-1">
+                    <p class="px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Data Categories</p>
+                    <a href="#aes" onclick="switchTab('aes')" id="nav-aes" class="nav-item flex items-center px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 hover:text-white transition">
+                        <i class="fa-solid fa-hotel w-6 text-center text-base"></i> <span class="ml-2">Tourist Arrivals (AEs)</span>
+                    </a>
+                    <a href="#tass" onclick="switchTab('tass')" id="nav-tass" class="nav-item flex items-center px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 hover:text-white transition">
+                        <i class="fa-solid fa-umbrella-beach w-6 text-center text-base"></i> <span class="ml-2">Same-Day Visitors (TAss)</span>
+                    </a>
+                </div>
+
+                <div class="space-y-1">
+                    <p class="px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Analytics & Reports</p>
+                    <a href="#annual-summary" onclick="switchTab('annual-summary')" id="nav-annual-summary" class="nav-item flex items-center px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 hover:text-white transition">
+                        <i class="fa-solid fa-calendar-days w-6 text-center text-base"></i> <span class="ml-2">Annual Summary</span>
+                    </a>
+                    <a href="#monthly-summary" onclick="switchTab('monthly-summary')" id="nav-monthly-summary" class="nav-item flex items-center px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 hover:text-white transition">
+                        <i class="fa-solid fa-chart-column w-6 text-center text-base"></i> <span class="ml-2">Monthly Summary</span>
+                    </a>
+                    <a href="#top-aes" onclick="switchTab('top-aes')" id="nav-top-aes" class="nav-item flex items-center px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 hover:text-white transition">
+                        <i class="fa-solid fa-trophy w-6 text-center text-base"></i> <span class="ml-2">Top 10 AEs</span>
+                    </a>
+                    <a href="#top-tass" onclick="switchTab('top-tass')" id="nav-top-tass" class="nav-item flex items-center px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 hover:text-white transition">
+                        <i class="fa-solid fa-star w-6 text-center text-base"></i> <span class="ml-2">Top 10 Attractions</span>
+                    </a>
+                </div>
+
+                <div class="space-y-1">
+                    <p class="px-3 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">System Admin</p>
+                    <a href="#backup" onclick="switchTab('backup')" id="nav-backup" class="nav-item flex items-center px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 hover:text-white transition">
+                        <i class="fa-solid fa-database w-6 text-center text-base"></i> <span class="ml-2">Backup & Restore</span>
+                    </a>
+                </div>
+            </div>
+            
+            <div class="p-4 border-t border-slate-700/50 text-xs text-slate-400">
+                <p>System Version: 3.3.0</p>
+                <p class="mt-1">IndexedDB High-Capacity Storage</p>
+            </div>
+        </aside>
+
+        <!-- Main Content View -->
+        <main class="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar">
+
+            <!-- Global Global Notification Banner -->
+            <div id="toastContainer" class="fixed top-16 right-4 z-50 flex flex-col space-y-2 pointer-events-none max-w-md w-full"></div>
+
+            <!-- SECTION 1: DASHBOARD VIEW -->
+            <section id="view-dashboard" class="tab-content space-y-6">
+                <!-- Dashboard Filters -->
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-4">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-filter text-teal-600"></i>
+                        <h2 class="font-semibold text-slate-800 text-sm md:text-base">Global Statistics Filters</h2>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                        <div>
+                            <select id="dashYear" onchange="refreshDashboard()" class="text-sm bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-teal-500">
+                                <option value="ALL">All Years</option>
+                            </select>
+                        </div>
+                        <div>
+                            <select id="dashMonth" onchange="refreshDashboard()" class="text-sm bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-teal-500">
+                                <option value="ALL">All Months</option>
+                                <option value="1">January</option>
+                                <option value="2">February</option>
+                                <option value="3">March</option>
+                                <option value="4">April</option>
+                                <option value="5">May</option>
+                                <option value="6">June</option>
+                                <option value="7">July</option>
+                                <option value="8">August</option>
+                                <option value="9">September</option>
+                                <option value="10">October</option>
+                                <option value="11">November</option>
+                                <option value="12">December</option>
+                            </select>
+                        </div>
+                        <div>
+                            <select id="dashMuni" onchange="refreshDashboard()" class="text-sm bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-teal-500">
+                                <option value="ALL">All Municipalities</option>
+                            </select>
+                        </div>
+                        <button onclick="resetDashFilters()" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-2 rounded-lg transition">Reset</button>
+                    </div>
+                </div>
+
+                <!-- KPI Metric Cards Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center space-x-4">
+                        <div class="p-3 bg-blue-100 text-blue-600 rounded-lg"><i class="fa-solid fa-hotel text-2xl"></i></div>
+                        <div>
+                            <p class="text-xs font-semibold text-slate-500 uppercase">Total Tourist Arrivals (AEs)</p>
+                            <h3 id="cardTotalAEs" class="text-2xl font-bold text-slate-800">0</h3>
+                            <p class="text-xs text-slate-500 mt-0.5"><span id="cardAECount">0</span> Establishments Reporting</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center space-x-4">
+                        <div class="p-3 bg-teal-100 text-teal-600 rounded-lg"><i class="fa-solid fa-umbrella-beach text-2xl"></i></div>
+                        <div>
+                            <p class="text-xs font-semibold text-slate-500 uppercase">Same-Day Visitors (TAss)</p>
+                            <h3 id="cardTotalTAss" class="text-2xl font-bold text-slate-800">0</h3>
+                            <p class="text-xs text-slate-500 mt-0.5"><span id="cardTAssCount">0</span> Attractions Reporting</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center space-x-4">
+                        <div class="p-3 bg-indigo-100 text-indigo-600 rounded-lg"><i class="fa-solid fa-users text-2xl"></i></div>
+                        <div>
+                            <p class="text-xs font-semibold text-slate-500 uppercase">Combined Visitors</p>
+                            <h3 id="cardCombinedVisitors" class="text-2xl font-bold text-slate-800">0</h3>
+                            <p class="text-xs text-slate-400">Tourist Arrivals + Same-Day</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center space-x-4">
+                        <div class="p-3 bg-amber-100 text-amber-600 rounded-lg"><i class="fa-solid fa-globe text-2xl"></i></div>
+                        <div>
+                            <p class="text-xs font-semibold text-slate-500 uppercase">Foreign & Overseas</p>
+                            <h3 id="cardForeignOverseas" class="text-2xl font-bold text-slate-800">0</h3>
+                            <p class="text-xs text-slate-500 mt-0.5"><span id="cardForeignPercent">0%</span> of AEs Arrivals</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Demographic Breakdown Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                        <span class="text-xs font-medium text-slate-400 uppercase">AEs Breakdown</span>
+                        <div class="mt-2 space-y-2">
+                            <div class="flex justify-between text-sm"><span class="text-slate-600">Local Tourists:</span> <span id="cardLocalTourists" class="font-bold">0</span></div>
+                            <div class="flex justify-between text-sm"><span class="text-slate-600">Foreign Tourists:</span> <span id="cardForeignTourists" class="font-bold">0</span></div>
+                            <div class="flex justify-between text-sm"><span class="text-slate-600">Overseas Filipinos:</span> <span id="cardOverseasFilipinos" class="font-bold">0</span></div>
+                        </div>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                        <span class="text-xs font-medium text-slate-400 uppercase">TAss Breakdown</span>
+                        <div class="mt-2 space-y-2">
+                            <div class="flex justify-between text-sm"><span class="text-slate-600">This Municipality (TM):</span> <span id="cardTM" class="font-bold">0</span></div>
+                            <div class="flex justify-between text-sm"><span class="text-slate-600">Other Municipality (OM):</span> <span id="cardOM" class="font-bold">0</span></div>
+                            <div class="flex justify-between text-sm"><span class="text-slate-600">Foreign Residence (FCR):</span> <span id="cardFCR" class="font-bold">0</span></div>
+                        </div>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                        <span class="text-xs font-medium text-slate-400 uppercase">Gender Total Distribution</span>
+                        <div class="mt-2 space-y-2">
+                            <div class="flex justify-between text-sm"><span class="text-slate-600"><i class="fa-solid fa-mars text-blue-500 mr-1"></i> Total Male:</span> <span id="cardTotalMale" class="font-bold">0</span></div>
+                            <div class="flex justify-between text-sm"><span class="text-slate-600"><i class="fa-solid fa-venus text-pink-500 mr-1"></i> Total Female:</span> <span id="cardTotalFemale" class="font-bold">0</span></div>
+                            <div class="w-full bg-slate-100 rounded-full h-2.5 mt-2 flex overflow-hidden">
+                                <div id="barMale" class="bg-blue-500 h-2.5" style="width: 50%"></div>
+                                <div id="barFemale" class="bg-pink-500 h-2.5" style="width: 50%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Visualization Charts Grid -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <h3 class="font-semibold text-slate-800 mb-4 text-sm md:text-base flex items-center justify-between">
+                            <span>Monthly Visitors Trend</span>
+                            <span class="text-xs font-normal text-slate-500">AEs vs TAss</span>
+                        </h3>
+                        <div class="h-64"><canvas id="chartMonthlyTrend"></canvas></div>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <h3 class="font-semibold text-slate-800 mb-4 text-sm md:text-base">Top Municipalities by Combined Visitors</h3>
+                        <div class="h-64"><canvas id="chartMunicipality"></canvas></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 2: TOURIST ARRIVALS (AEs DATA) -->
+            <section id="view-aes" class="tab-content hidden space-y-6">
+                <div class="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800">Tourist Arrivals – Accommodation Establishments (AEs)</h2>
+                        <p class="text-xs text-slate-500">Manage, record, and import stayover visitor statistics.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="openModal('modalAE')" class="bg-teal-600 hover:bg-teal-700 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-plus"></i> Add Single Record
+                        </button>
+                        <button onclick="openModal('modalBulkAE')" class="bg-navy-700 hover:bg-navy-800 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-file-import"></i> Bulk Upload Excel
+                        </button>
+                        <button onclick="exportAEsExcel()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-file-export"></i> Export Excel
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filters & Search -->
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+                        <input type="text" id="filterAESearch" oninput="renderAETable()" placeholder="Search establishment or place..." class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-teal-500">
+                        <select id="filterAEMuni" onchange="renderAETable()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="ALL">All Municipalities</option></select>
+                        <select id="filterAEYear" onchange="renderAETable()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="ALL">All Years</option></select>
+                        <select id="filterAEMonth" onchange="renderAETable()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2">
+                            <option value="ALL">All Months</option>
+                            <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+                            <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+                            <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+                            <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+                        </select>
+                        <select id="filterAEType" onchange="renderAETable()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="ALL">All Types/Classes</option></select>
+                    </div>
+                </div>
+
+                <!-- Table View -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="overflow-x-auto custom-scrollbar">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="bg-slate-800 text-slate-200 uppercase font-semibold">
+                                <tr>
+                                    <th class="p-3 border-b">Location</th>
+                                    <th class="p-3 border-b">Period</th>
+                                    <th class="p-3 border-b">Establishment / Type</th>
+                                    <th class="p-3 border-b text-right">Local</th>
+                                    <th class="p-3 border-b text-right">Foreign</th>
+                                    <th class="p-3 border-b text-right">Overseas Fil</th>
+                                    <th class="p-3 border-b text-right bg-slate-700">Total (L+F)</th>
+                                    <th class="p-3 border-b text-right">Male</th>
+                                    <th class="p-3 border-b text-right">Female</th>
+                                    <th class="p-3 border-b text-right bg-slate-700">Total (M+F)</th>
+                                    <th class="p-3 border-b text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="aeTableBody" class="divide-y divide-slate-100 font-medium text-slate-700">
+                                <tr><td colspan="11" class="p-6 text-center text-slate-400">Loading records...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="p-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
+                        <span>Showing <strong id="aeRecordCount">0</strong> records</span>
+                        <div class="space-x-1" id="aePagination"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 3: SAME-DAY VISITORS (TAss DATA) -->
+            <section id="view-tass" class="tab-content hidden space-y-6">
+                <div class="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800">Same-Day Visitors – Tourist Attraction Arrivals (TAss)</h2>
+                        <p class="text-xs text-slate-500">Manage, record, and import excursionist and day-visitor statistics.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="openModal('modalTAss')" class="bg-teal-600 hover:bg-teal-700 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-plus"></i> Add Single Record
+                        </button>
+                        <button onclick="openModal('modalBulkTAss')" class="bg-navy-700 hover:bg-navy-800 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-file-import"></i> Bulk Upload Excel
+                        </button>
+                        <button onclick="exportTAssExcel()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-file-export"></i> Export Excel
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                        <input type="text" id="filterTAssSearch" oninput="renderTAssTable()" placeholder="Search attraction or place..." class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-teal-500">
+                        <select id="filterTAssMuni" onchange="renderTAssTable()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="ALL">All Municipalities</option></select>
+                        <select id="filterTAssYear" onchange="renderTAssTable()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="ALL">All Years</option></select>
+                        <select id="filterTAssMonth" onchange="renderTAssTable()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2">
+                            <option value="ALL">All Months</option>
+                            <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+                            <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+                            <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+                            <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Table View -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="overflow-x-auto custom-scrollbar">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="bg-slate-800 text-slate-200 uppercase font-semibold">
+                                <tr>
+                                    <th class="p-3 border-b">Location</th>
+                                    <th class="p-3 border-b">Period</th>
+                                    <th class="p-3 border-b">Tourist Attraction</th>
+                                    <th class="p-3 border-b text-right">TM (Sum)</th>
+                                    <th class="p-3 border-b text-right">OM (Sum)</th>
+                                    <th class="p-3 border-b text-right">FCR (Sum)</th>
+                                    <th class="p-3 border-b text-right">Total Male</th>
+                                    <th class="p-3 border-b text-right">Total Female</th>
+                                    <th class="p-3 border-b text-right bg-slate-700">Grand Total</th>
+                                    <th class="p-3 border-b text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tassTableBody" class="divide-y divide-slate-100 font-medium text-slate-700">
+                                <tr><td colspan="10" class="p-6 text-center text-slate-400">Loading records...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="p-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
+                        <span>Showing <strong id="tassRecordCount">0</strong> records</span>
+                        <div class="space-x-1" id="tassPagination"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 4: ANNUAL SUMMARY REPORT -->
+            <section id="view-annual-summary" class="tab-content hidden space-y-6">
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800">Municipality Annual Tourism Statistics</h2>
+                        <p class="text-xs text-slate-500">Yearly breakdown comparing Tourist Arrivals and Same-Day Visitors per municipality.</p>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <select id="rptAnnualYear" onchange="renderAnnualReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-teal-500">
+                            <!-- populated dynamically -->
+                        </select>
+                        <div class="flex gap-2">
+                            <button onclick="exportAnnualReportExcel()" class="bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
+                            <div class="flex gap-2">
+                            <button onclick="exportMonthlyReportExcel()" class="bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
+                            <button onclick="window.print()" class="bg-slate-800 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-slate-700"><i class="fa-solid fa-print mr-1"></i> Print Report</button>
+                        </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="printAreaAnnual" class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                    <div class="text-center border-b pb-4">
+                        <h3 class="text-xl font-bold uppercase text-navy-900">Annual Tourism Performance Summary</h3>
+                        <p class="text-xs text-slate-500">Reporting Year: <span id="rptAnnualYearLbl" class="font-bold text-slate-700">2026</span></p>
+                    </div>
+
+                    <div class="overflow-x-auto custom-scrollbar">
+                        <table class="w-full text-xs text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-300">
+                                    <th class="p-2 border" rowspan="2">Municipality</th>
+                                    <th class="p-2 border text-center bg-blue-50" colspan="4">Tourist Arrivals (AEs)</th>
+                                    <th class="p-2 border text-center bg-teal-50" colspan="4">Same-Day Visitors (TAss)</th>
+                                    <th class="p-2 border text-right bg-amber-50" rowspan="2">Combined Visitors</th>
+                                </tr>
+                                <tr class="bg-slate-50 text-slate-600 font-semibold border-b border-slate-300">
+                                    <th class="p-2 border text-right">Local</th>
+                                    <th class="p-2 border text-right">Foreign</th>
+                                    <th class="p-2 border text-right">Overseas</th>
+                                    <th class="p-2 border text-right bg-blue-100">Total AEs</th>
+                                    <th class="p-2 border text-right">TM</th>
+                                    <th class="p-2 border text-right">OM</th>
+                                    <th class="p-2 border text-right">FCR</th>
+                                    <th class="p-2 border text-right bg-teal-100">Total TAss</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rptAnnualBody" class="divide-y divide-slate-200">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                            <tfoot id="rptAnnualFoot" class="bg-slate-800 text-white font-bold">
+                                <!-- Populated dynamically -->
+                            </tfoot>
+                        </table>
+                    </div>
+                    <p class="text-[10px] text-slate-400 italic">Note: "Combined Visitors" represents the numerical sum of Tourist Arrivals (Stayover) and Same-Day Visitors.</p>
+                </div>
+            </section>
+
+            <!-- SECTION 5: MONTHLY SUMMARY REPORT -->
+            <section id="view-monthly-summary" class="tab-content hidden space-y-6">
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800">Monthly Tourism Statistics</h2>
+                        <p class="text-xs text-slate-500">Jan - Dec progression breakdown for selected reporting year and municipality.</p>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <select id="rptMonthlyYear" onchange="renderMonthlyReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"></select>
+                        <select id="rptMonthlyMuni" onchange="renderMonthlyReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="ALL">All Municipalities</option></select>
+                        <button onclick="window.print()" class="bg-slate-800 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-slate-700"><i class="fa-solid fa-print mr-1"></i> Print Report</button>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                    <div class="text-center border-b pb-4">
+                        <h3 class="text-xl font-bold uppercase text-navy-900">Monthly Visitor Breakdown Report</h3>
+                        <p class="text-xs text-slate-500">Year: <span id="rptMonthlyYearLbl" class="font-bold">2026</span> | Scope: <span id="rptMonthlyMuniLbl" class="font-bold">All Municipalities</span></p>
+                    </div>
+
+                    <div class="overflow-x-auto custom-scrollbar">
+                        <table class="w-full text-xs text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-300">
+                                    <th class="p-2 border">Month</th>
+                                    <th class="p-2 border text-right">Local Tourist</th>
+                                    <th class="p-2 border text-right">Foreign Tourist</th>
+                                    <th class="p-2 border text-right">Overseas Fil</th>
+                                    <th class="p-2 border text-right bg-blue-50">Total Tourist Arrivals</th>
+                                    <th class="p-2 border text-right">Same-Day (TM)</th>
+                                    <th class="p-2 border text-right">Same-Day (OM)</th>
+                                    <th class="p-2 border text-right">Same-Day (FCR)</th>
+                                    <th class="p-2 border text-right bg-teal-50">Total Same-Day</th>
+                                    <th class="p-2 border text-right bg-amber-50">Combined Visitors</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rptMonthlyBody" class="divide-y divide-slate-200"></tbody>
+                            <tfoot id="rptMonthlyFoot" class="bg-slate-800 text-white font-bold"></tfoot>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 6: TOP 10 ACCOMMODATION ESTABLISHMENTS -->
+            <section id="view-top-aes" class="tab-content hidden space-y-6">
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800">Top 10 Accommodation Establishments</h2>
+                        <p class="text-xs text-slate-500">Ranked by total stayover tourist arrivals for the selected scope.</p>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <select id="topAEYear" onchange="renderTopAEReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"></select>
+                        <select id="topAEMonth" onchange="renderTopAEReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2">
+                            <option value="ALL">All Months (Entire Year)</option>
+                            <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+                            <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+                            <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+                            <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+                        </select>
+                        <select id="topAEMuni" onchange="renderTopAEReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="ALL">All Municipalities</option></select>
+                        <button onclick="exportTopAEExcel()" class="bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                        <table class="w-full text-xs text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-800 text-white uppercase font-semibold">
+                                    <th class="p-3 text-center w-12">Rank</th>
+                                    <th class="p-3">Accommodation Establishment</th>
+                                    <th class="p-3">Municipality</th>
+                                    <th class="p-3">Type / Class</th>
+                                    <th class="p-3 text-right">Tourist Arrivals</th>
+                                </tr>
+                            </thead>
+                            <tbody id="topAEBody" class="divide-y divide-slate-200"></tbody>
+                        </table>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <h3 class="font-bold text-slate-800 text-sm mb-4">Rank Distribution</h3>
+                        <div class="h-64"><canvas id="chartTopAE"></canvas></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 7: TOP 10 TOURIST ATTRACTIONS -->
+            <section id="view-top-tass" class="tab-content hidden space-y-6">
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800">Top 10 Tourist Attractions</h2>
+                        <p class="text-xs text-slate-500">Ranked by grand total same-day visitors for the selected filter period.</p>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <select id="topTAssYear" onchange="renderTopTAssReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"></select>
+                        <select id="topTAssMonth" onchange="renderTopTAssReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2">
+                            <option value="ALL">All Months (Entire Year)</option>
+                            <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+                            <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+                            <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+                            <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+                        </select>
+                        <select id="topTAssMuni" onchange="renderTopTAssReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="ALL">All Municipalities</option></select>
+                        <button onclick="exportTopTAssExcel()" class="bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                        <table class="w-full text-xs text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-800 text-white uppercase font-semibold">
+                                    <th class="p-3 text-center w-12">Rank</th>
+                                    <th class="p-3">Tourist Attraction</th>
+                                    <th class="p-3">Municipality</th>
+                                    <th class="p-3 text-right">Same-Day Visitors</th>
+                                </tr>
+                            </thead>
+                            <tbody id="topTAssBody" class="divide-y divide-slate-200"></tbody>
+                        </table>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <h3 class="font-bold text-slate-800 text-sm mb-4">Attraction Visitor Share</h3>
+                        <div class="h-64"><canvas id="chartTopTAss"></canvas></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 8: BACKUP & RESTORE VIEW -->
+            <section id="view-backup" class="tab-content hidden space-y-6">
+                <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm max-w-3xl mx-auto space-y-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-800">Database Backup & System Restore</h2>
+                        <p class="text-xs text-slate-500 mt-1">Safeguard your tourism statistics database or restore from a previously exported backup file.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                        <!-- Backup Card -->
+                        <div class="p-5 border border-slate-200 rounded-xl bg-slate-50 space-y-3">
+                            <div class="p-3 bg-blue-100 text-blue-600 rounded-lg w-fit"><i class="fa-solid fa-download text-xl"></i></div>
+                            <h3 class="font-bold text-slate-800 text-sm">Export Full Database</h3>
+                            <p class="text-xs text-slate-600">Downloads an Excel workbook containing all Accommodation Establishment (AEs) records, Same-Day Visitor (TAss) records, and backup information.</p>
+                            <button onclick="exportBackupExcel()" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold py-2.5 rounded-lg transition">
+                                <i class="fa-solid fa-file-export mr-1.5"></i> Download Backup File
+                            </button>
+                        </div>
+
+                        <!-- Restore Card -->
+                        <div class="p-5 border border-slate-200 rounded-xl bg-slate-50 space-y-3">
+                            <div class="p-3 bg-amber-100 text-amber-600 rounded-lg w-fit"><i class="fa-solid fa-upload text-xl"></i></div>
+                            <h3 class="font-bold text-slate-800 text-sm">Restore Database</h3>
+                            <p class="text-xs text-slate-600">Upload an Excel backup workbook to overwrite/restore system records. Warning: Existing database will be replaced.</p>
+                            <input type="file" id="restoreFileInput" accept=".xlsx,.xls" class="hidden" onchange="handleRestoreExcelFile(event)">
+                            <button onclick="document.getElementById('restoreFileInput').click()" class="w-full bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold py-2.5 rounded-lg transition">
+                                <i class="fa-solid fa-file-import mr-1.5"></i> Select & Restore File
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Reset Demo Data -->
+                    <div class="border-t pt-6 flex justify-between items-center text-xs">
+                        <div>
+                            <span class="font-bold text-slate-700">Need Demo Data?</span>
+                            <p class="text-slate-500">Re-initialize default sample datasets for testing purposes.</p>
+                        </div>
+                        <button onclick="resetToSampleData()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold px-4 py-2 rounded-lg transition">
+                            Reload Demo Records
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- MODAL 1: ADD/EDIT TOURIST ARRIVALS (AE) -->
+    <div id="modalAE" class="fixed inset-0 bg-slate-900/60 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="p-4 bg-navy-900 text-white flex justify-between items-center">
+                <h3 id="modalAETitle" class="font-bold text-sm md:text-base">Add Accommodation Establishment Record</h3>
+                <button onclick="closeModal('modalAE')" class="text-slate-400 hover:text-white text-lg">&times;</button>
+            </div>
+            <form id="formAE" onsubmit="saveAERecord(event)" class="p-5 overflow-y-auto space-y-4 custom-scrollbar text-xs">
+                <input type="hidden" id="ae_id">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    <div>
+                        <label class="block font-semibold mb-1">Province/HUC/ICC *</label>
+                        <input type="text" id="ae_province" required class="w-full border rounded p-2 text-xs" value="Occidental Mindoro">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Municipality/City *</label>
+                        <input type="text" id="ae_municipality" required class="w-full border rounded p-2 text-xs">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Accommodation Establishment *</label>
+                        <input type="text" id="ae_establishment" required class="w-full border rounded p-2 text-xs">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Type-Class</label>
+                        <input type="text" id="ae_type_class" class="w-full border rounded p-2 text-xs" placeholder="e.g. Hotel, Resort, Inn">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Year *</label>
+                        <input type="number" id="ae_year" min="2000" max="2100" required class="w-full border rounded p-2 text-xs" value="2026">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Month *</label>
+                        <select id="ae_month" required class="w-full border rounded p-2 text-xs">
+                            <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+                            <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+                            <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+                            <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="border-t pt-3 space-y-2">
+                    <p class="font-bold text-slate-700">Visitor Counts (By Origin)</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block mb-1">Local Tourist</label>
+                            <input type="number" id="ae_local" min="0" value="0" oninput="calcAETotals()" class="w-full border rounded p-2 text-xs">
+                        </div>
+                        <div>
+                            <label class="block mb-1">Foreign Tourist</label>
+                            <input type="number" id="ae_foreign" min="0" value="0" oninput="calcAETotals()" class="w-full border rounded p-2 text-xs">
+                        </div>
+                        <div>
+                            <label class="block mb-1">Overseas Filipino</label>
+                            <input type="number" id="ae_overseas" min="0" value="0" oninput="calcAETotals()" class="w-full border rounded p-2 text-xs">
+                        </div>
+                    </div>
+                    <div class="bg-slate-100 p-2.5 rounded text-right font-bold text-slate-800">
+                        Total (L+F): <span id="ae_calc_lf" class="text-teal-700 font-extrabold">0</span>
+                    </div>
+                </div>
+
+                <div class="border-t pt-3 space-y-2">
+                    <p class="font-bold text-slate-700">Visitor Counts (By Gender)</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block mb-1">Total Male</label>
+                            <input type="number" id="ae_male" min="0" value="0" oninput="calcAETotals()" class="w-full border rounded p-2 text-xs">
+                        </div>
+                        <div>
+                            <label class="block mb-1">Total Female</label>
+                            <input type="number" id="ae_female" min="0" value="0" oninput="calcAETotals()" class="w-full border rounded p-2 text-xs">
+                        </div>
+                    </div>
+                    <div class="bg-slate-100 p-2.5 rounded text-right font-bold text-slate-800">
+                        Total (M+F): <span id="ae_calc_mf" class="text-teal-700 font-extrabold">0</span>
+                    </div>
+                </div>
+
+                <div class="p-3 bg-slate-50 border-t flex justify-end space-x-2">
+                    <button type="button" onclick="closeModal('modalAE')" class="px-4 py-2 rounded bg-slate-200 text-slate-700 font-medium hover:bg-slate-300">Cancel</button>
+                    <button type="submit" class="px-4 py-2 rounded bg-teal-600 text-white font-medium hover:bg-teal-700">Save Record</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 2: ADD/EDIT SAME-DAY VISITORS (TAss) -->
+    <div id="modalTAss" class="fixed inset-0 bg-slate-900/60 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="p-4 bg-navy-900 text-white flex justify-between items-center">
+                <h3 id="modalTAssTitle" class="font-bold text-sm md:text-base">Add Same-Day Visitors (TAss) Record</h3>
+                <button onclick="closeModal('modalTAss')" class="text-slate-400 hover:text-white text-lg">&times;</button>
+            </div>
+            <form id="formTAss" onsubmit="saveTAssRecord(event)" class="p-5 overflow-y-auto space-y-4 custom-scrollbar text-xs">
+                <input type="hidden" id="tass_id">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                        <label class="block font-semibold mb-1">Province/HUC/ICC *</label>
+                        <input type="text" id="tass_province" required class="w-full border rounded p-2 text-xs" value="Occidental Mindoro">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Municipality/City *</label>
+                        <input type="text" id="tass_municipality" required class="w-full border rounded p-2 text-xs">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Tourist Attraction *</label>
+                        <input type="text" id="tass_attraction" required class="w-full border rounded p-2 text-xs">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Year *</label>
+                        <input type="number" id="tass_year" min="2000" max="2100" required class="w-full border rounded p-2 text-xs" value="2026">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Month *</label>
+                        <select id="tass_month" required class="w-full border rounded p-2 text-xs">
+                            <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+                            <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+                            <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+                            <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="border-t pt-3 space-y-3">
+                    <p class="font-bold text-slate-700">Visitor Demographics Breakdown</p>
+                    
+                    <!-- TM -->
+                    <div class="p-3 bg-slate-50 rounded border space-y-2">
+                        <span class="font-semibold text-slate-700">This Municipality (TM)</span>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div><label class="block mb-1">Male TM(M)</label><input type="number" id="tass_tm_m" min="0" value="0" oninput="calcTAssTotals()" class="w-full border rounded p-1.5 text-xs"></div>
+                            <div><label class="block mb-1">Female TM(F)</label><input type="number" id="tass_tm_f" min="0" value="0" oninput="calcTAssTotals()" class="w-full border rounded p-1.5 text-xs"></div>
+                            <div class="text-right flex flex-col justify-end"><span class="text-xs text-slate-500">TM SUM:</span><span id="calc_tm_sum" class="font-bold text-sm">0</span></div>
+                        </div>
+                    </div>
+
+                    <!-- OM -->
+                    <div class="p-3 bg-slate-50 rounded border space-y-2">
+                        <span class="font-semibold text-slate-700">Other Municipality (OM)</span>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div><label class="block mb-1">Male OM(M)</label><input type="number" id="tass_om_m" min="0" value="0" oninput="calcTAssTotals()" class="w-full border rounded p-1.5 text-xs"></div>
+                            <div><label class="block mb-1">Female OM(F)</label><input type="number" id="tass_om_f" min="0" value="0" oninput="calcTAssTotals()" class="w-full border rounded p-1.5 text-xs"></div>
+                            <div class="text-right flex flex-col justify-end"><span class="text-xs text-slate-500">OM SUM:</span><span id="calc_om_sum" class="font-bold text-sm">0</span></div>
+                        </div>
+                    </div>
+
+                    <!-- FCR -->
+                    <div class="p-3 bg-slate-50 rounded border space-y-2">
+                        <span class="font-semibold text-slate-700">Foreign Country of Residence (FCR)</span>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div><label class="block mb-1">Male FCR(M)</label><input type="number" id="tass_fcr_m" min="0" value="0" oninput="calcTAssTotals()" class="w-full border rounded p-1.5 text-xs"></div>
+                            <div><label class="block mb-1">Female FCR(F)</label><input type="number" id="tass_fcr_f" min="0" value="0" oninput="calcTAssTotals()" class="w-full border rounded p-1.5 text-xs"></div>
+                            <div class="text-right flex flex-col justify-end"><span class="text-xs text-slate-500">FCR SUM:</span><span id="calc_fcr_sum" class="font-bold text-sm">0</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Calculated Overall -->
+                    <div class="p-3 bg-teal-50 border border-teal-200 rounded flex justify-between items-center font-bold text-teal-900">
+                        <div>Total Male: <span id="calc_tass_male">0</span> | Total Female: <span id="calc_tass_female">0</span></div>
+                        <div>Grand Total: <span id="calc_tass_grand" class="text-base text-teal-700">0</span></div>
+                    </div>
+                </div>
+
+                <div class="p-3 bg-slate-50 border-t flex justify-end space-x-2">
+                    <button type="button" onclick="closeModal('modalTAss')" class="px-4 py-2 rounded bg-slate-200 text-slate-700 font-medium hover:bg-slate-300">Cancel</button>
+                    <button type="submit" class="px-4 py-2 rounded bg-teal-600 text-white font-medium hover:bg-teal-700">Save Record</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 3: BULK UPLOAD (AEs) -->
+    <div id="modalBulkAE" class="fixed inset-0 bg-slate-900/60 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="p-4 bg-navy-900 text-white flex justify-between items-center">
+                <h3 class="font-bold text-sm md:text-base">Bulk Upload Tourist Arrivals (AEs) Data</h3>
+                <button onclick="closeModal('modalBulkAE')" class="text-slate-400 hover:text-white text-lg">&times;</button>
+            </div>
+            <div class="p-5 overflow-y-auto space-y-4 custom-scrollbar text-xs">
+                <div class="bg-blue-50 border border-blue-200 p-3 rounded-lg text-blue-800 space-y-1">
+                    <p class="font-bold"><i class="fa-solid fa-circle-info mr-1"></i> Unique Key Matching Rule:</p>
+                    <p>Records are matched on: <strong>Province + Municipality + Year + Month + Accommodation Establishment</strong>. Existing records will be updated; new ones will be added. Upload only Excel (.xlsx/.xls) files. Use the Excel Template for the correct columns.</p>
+                </div>
+
+                <div class="flex items-center space-x-3">
+                    <input type="file" id="bulkAEFile" accept=".xlsx,.xls" class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100">
+                    <button onclick="processAEBulkExcel()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg font-medium">Process Excel</button> 
+                    <button onclick="downloadAETemplate()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium"><i class="fa-solid fa-file-excel mr-1"></i> Excel Template</button>
+                </div>
+
+                <!-- Preview Stats -->
+                <div id="bulkAESummary" class="hidden grid grid-cols-3 gap-3 text-center font-bold">
+                    <div class="p-2 bg-emerald-100 text-emerald-800 rounded"><span id="bulkAENewCount">0</span> New Records</div>
+                    <div class="p-2 bg-amber-100 text-amber-800 rounded"><span id="bulkAEUpdateCount">0</span> Updated Records</div>
+                    <div class="p-2 bg-rose-100 text-rose-800 rounded"><span id="bulkAESkippedCount">0</span> Rejected/Errors</div>
+                </div>
+
+                <div id="bulkAEPreviewContainer" class="hidden overflow-x-auto max-h-60 border rounded custom-scrollbar">
+                    <table class="w-full text-left text-[11px] border-collapse">
+                        <thead class="bg-slate-100 font-semibold sticky top-0">
+                            <tr>
+                                <th class="p-2 border">Action</th>
+                                <th class="p-2 border">Municipality</th>
+                                <th class="p-2 border">Establishment</th>
+                                <th class="p-2 border">Year/Month</th>
+                                <th class="p-2 border">Local</th>
+                                <th class="p-2 border">Foreign</th>
+                                <th class="p-2 border">Total (L+F)</th>
+                                <th class="p-2 border">Status/Error</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bulkAEPreviewBody" class="divide-y"></tbody>
+                    </table>
+                </div>
+
+                <div id="bulkAEErrorLog" class="hidden p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded text-[11px] max-h-32 overflow-y-auto"></div>
+            </div>
+            <div class="p-3 bg-slate-50 border-t flex justify-end space-x-2">
+                <button onclick="closeModal('modalBulkAE')" class="px-4 py-2 rounded bg-slate-200 text-slate-700 font-medium">Cancel</button>
+                <button id="btnConfirmBulkAE" onclick="commitAEBulkImport()" class="px-4 py-2 rounded bg-teal-600 hover:bg-teal-700 text-white font-medium">Confirm & Import Data</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 4: BULK UPLOAD (TAss) -->
+    <div id="modalBulkTAss" class="fixed inset-0 bg-slate-900/60 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="p-4 bg-navy-900 text-white flex justify-between items-center">
+                <h3 class="font-bold text-sm md:text-base">Bulk Upload Same-Day Visitors (TAss) Data</h3>
+                <button onclick="closeModal('modalBulkTAss')" class="text-slate-400 hover:text-white text-lg">&times;</button>
+            </div>
+            <div class="p-5 overflow-y-auto space-y-4 custom-scrollbar text-xs">
+                <div class="bg-blue-50 border border-blue-200 p-3 rounded-lg text-blue-800 space-y-1">
+                    <p class="font-bold"><i class="fa-solid fa-circle-info mr-1"></i> Unique Key Matching Rule:</p>
+                    <p>Records are matched on: <strong>Province + Municipality + Year + Month + Tourist Attraction</strong>. Existing records will be updated; new ones will be added. Upload only Excel (.xlsx/.xls) files. Use the Excel Template for the correct columns.</p>
+                </div>
+
+                <div class="flex items-center space-x-3">
+                    <input type="file" id="bulkTAssFile" accept=".xlsx,.xls" class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100">
+                    <button onclick="processTAssBulkExcel()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg font-medium">Process Excel</button> 
+                    <button onclick="downloadTAssTemplate()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium"><i class="fa-solid fa-file-excel mr-1"></i> Excel Template</button>
+                </div>
+
+                <!-- Preview Stats -->
+                <div id="bulkTAssSummary" class="hidden grid grid-cols-3 gap-3 text-center font-bold">
+                    <div class="p-2 bg-emerald-100 text-emerald-800 rounded"><span id="bulkTAssNewCount">0</span> New Records</div>
+                    <div class="p-2 bg-amber-100 text-amber-800 rounded"><span id="bulkTAssUpdateCount">0</span> Updated Records</div>
+                    <div class="p-2 bg-rose-100 text-rose-800 rounded"><span id="bulkTAssSkippedCount">0</span> Rejected/Errors</div>
+                </div>
+
+                <div id="bulkTAssPreviewContainer" class="hidden overflow-x-auto max-h-60 border rounded custom-scrollbar">
+                    <table class="w-full text-left text-[11px] border-collapse">
+                        <thead class="bg-slate-100 font-semibold sticky top-0">
+                            <tr>
+                                <th class="p-2 border">Action</th>
+                                <th class="p-2 border">Municipality</th>
+                                <th class="p-2 border">Attraction</th>
+                                <th class="p-2 border">Year/Month</th>
+                                <th class="p-2 border">TM Sum</th>
+                                <th class="p-2 border">OM Sum</th>
+                                <th class="p-2 border">FCR Sum</th>
+                                <th class="p-2 border">Grand Total</th>
+                                <th class="p-2 border">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bulkTAssPreviewBody" class="divide-y"></tbody>
+                    </table>
+                </div>
+
+                <div id="bulkTAssErrorLog" class="hidden p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded text-[11px] max-h-32 overflow-y-auto"></div>
+            </div>
+            <div class="p-3 bg-slate-50 border-t flex justify-end space-x-2">
+                <button onclick="closeModal('modalBulkTAss')" class="px-4 py-2 rounded bg-slate-200 text-slate-700 font-medium">Cancel</button>
+                <button id="btnConfirmBulkTAss" onclick="commitTAssBulkImport()" class="px-4 py-2 rounded bg-teal-600 hover:bg-teal-700 text-white font-medium">Confirm & Import Data</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- JAVASCRIPT APPLICATION LOGIC -->
+    <script>
+        /**
+         * GLOBAL APPLICATION CONSTANTS & MONTH NAMES
+         */
+        const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        
+        // IndexedDB Configuration
+        const DB_NAME = "TourismDataBankDB";
+        const DB_VERSION = 1;
+        let db = null;
+
+        // In-Memory Data Collections
+        let aeRecords = [];
+        let tassRecords = [];
+
+        // Temporary parsed bulk upload queues
+        let pendingBulkAE = [];
+        let pendingBulkTAss = [];
+
+        // Chart instances
+        let chartMonthlyTrendObj = null;
+        let chartMunicipalityObj = null;
+        let chartTopAEObj = null;
+        let chartTopTAssObj = null;
+
+        /**
+         * INITIALIZATION & INDEXEDDB STORAGE SETUP
+         */
+        window.onload = function() {
+            initIndexedDB().then(() => {
+                loadAllRecords().then(() => {
+                    if (aeRecords.length === 0 && tassRecords.length === 0) {
+                        preloadSampleData();
+                    } else {
+                        refreshAllViews();
+                    }
+                });
+            }).catch(err => {
+                console.error("IndexedDB load failed, falling back to local memory:", err);
+                showToast("IndexedDB Initialization Error. Falling back to local storage.", "warning");
+            });
+
+            // Mobile menu toggle listener
+            document.getElementById('mobileMenuBtn').addEventListener('click', function() {
+                const sidebar = document.getElementById('sidebar');
+                sidebar.classList.toggle('hidden');
+            });
+        };
+
+        function initIndexedDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+                request.onupgradeneeded = function(e) {
+                    db = e.target.result;
+                    // Store 1: Tourist Arrivals - Accommodation Establishments
+                    if (!db.objectStoreNames.contains("aes")) {
+                        const aeStore = db.createObjectStore("aes", { keyPath: "id", autoIncrement: true });
+                        aeStore.createIndex("uniqueKey", ["province", "municipality", "year", "month", "establishment"], { unique: true });
+                    }
+                    // Store 2: Same-Day Visitors - Tourist Attractions
+                    if (!db.objectStoreNames.contains("tass")) {
+                        const tassStore = db.createObjectStore("tass", { keyPath: "id", autoIncrement: true });
+                        tassStore.createIndex("uniqueKey", ["province", "municipality", "year", "month", "attraction"], { unique: true });
+                    }
+                };
+
+                request.onsuccess = function(e) {
+                    db = e.target.result;
+                    document.getElementById('dbStatusBadge').innerHTML = `<span class="w-2 h-2 mr-1.5 bg-emerald-400 rounded-full animate-pulse"></span> IndexedDB Active`;
+                    resolve(db);
+                };
+
+                request.onerror = function(e) {
+                    reject(e);
+                };
+            });
+        }
+
+        /**
+         * DB CRUD HELPERS
+         */
+        async function loadAllRecords() {
+            if (!db) return;
+            aeRecords = await getAllFromStore("aes");
+            tassRecords = await getAllFromStore("tass");
+        }
+
+        function getAllFromStore(storeName) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, "readonly");
+                const store = tx.objectStore(storeName);
+                const req = store.getAll();
+                req.onsuccess = () => resolve(req.result || []);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        function putRecordToStore(storeName, record) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, "readwrite");
+                const store = tx.objectStore(storeName);
+                const req = store.put(record);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        function deleteRecordFromStore(storeName, id) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, "readwrite");
+                const store = tx.objectStore(storeName);
+                const req = store.delete(id);
+                req.onsuccess = () => resolve(true);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        function clearStore(storeName) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, "readwrite");
+                const store = tx.objectStore(storeName);
+                const req = store.clear();
+                req.onsuccess = () => resolve(true);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        /**
+         * DEMO SAMPLE DATA INITIALIZATION
+         */
+        async function preloadSampleData() {
+            const sampleAEs = [
+                { province: "Occidental Mindoro", municipality: "Mamburao", year: 2026, month: 1, establishment: "Beach Haven Resort", type_class: "Resort", local_tourist: 450, foreign_tourist: 60, overseas_filipino: 15, total_lf: 525, total_male: 260, total_female: 265, total_mf: 525 },
+                { province: "Occidental Mindoro", municipality: "Mamburao", year: 2026, month: 2, establishment: "Beach Haven Resort", type_class: "Resort", local_tourist: 510, foreign_tourist: 85, overseas_filipino: 20, total_lf: 615, total_male: 310, total_female: 305, total_mf: 615 },
+                { province: "Occidental Mindoro", municipality: "Sablayan", year: 2026, month: 1, establishment: "Apo Reef Hotel", type_class: "Hotel", local_tourist: 680, foreign_tourist: 210, overseas_filipino: 35, total_lf: 925, total_male: 470, total_female: 455, total_mf: 925 },
+                { province: "Occidental Mindoro", municipality: "San Jose", year: 2026, month: 1, establishment: "Sikatuna Suites", type_class: "Hotel", local_tourist: 820, foreign_tourist: 110, overseas_filipino: 40, total_lf: 970, total_male: 490, total_female: 480, total_mf: 970 }
+            ];
+
+            const sampleTAss = [
+                { province: "Occidental Mindoro", municipality: "Mamburao", year: 2026, month: 1, attraction: "Mamburao Central Beach", tm_m: 300, tm_f: 320, tm_sum: 620, om_m: 180, om_f: 200, om_sum: 380, fcr_m: 20, fcr_f: 25, fcr_sum: 45, total_male: 500, total_female: 545, grand_total: 1045 },
+                { province: "Occidental Mindoro", municipality: "Sablayan", year: 2026, month: 1, attraction: "Apo Reef Natural Park", tm_m: 150, tm_f: 140, tm_sum: 290, om_m: 520, om_f: 480, om_sum: 1000, fcr_m: 110, fcr_f: 90, fcr_sum: 200, total_male: 780, total_female: 710, grand_total: 1490 },
+                { province: "Occidental Mindoro", municipality: "San Jose", year: 2026, month: 1, attraction: "Ilin Island Eco Beach", tm_m: 220, tm_f: 210, tm_sum: 430, om_m: 310, om_f: 290, om_sum: 600, fcr_m: 40, fcr_f: 35, fcr_sum: 75, total_male: 570, total_female: 535, grand_total: 1105 }
+            ];
+
+            for (let rec of sampleAEs) await putRecordToStore("aes", rec);
+            for (let rec of sampleTAss) await putRecordToStore("tass", rec);
+
+            await loadAllRecords();
+            refreshAllViews();
+            showToast("Sample tourism datasets preloaded successfully.", "info");
+        }
+
+        async function resetToSampleData() {
+            if (confirm("Reset current database and reload original sample data?")) {
+                await clearStore("aes");
+                await clearStore("tass");
+                await preloadSampleData();
+            }
+        }
+
+        /**
+         * NAVIGATION & TAB SWITCHING LOGIC
+         */
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.nav-item').forEach(el => {
+                el.classList.remove('bg-teal-600', 'text-white');
+                el.classList.add('hover:bg-slate-800', 'hover:text-white');
+            });
+
+            const targetView = document.getElementById(`view-${tabId}`);
+            if (targetView) targetView.classList.remove('hidden');
+
+            const targetNav = document.getElementById(`nav-${tabId}`);
+            if (targetNav) {
+                targetNav.classList.add('bg-teal-600', 'text-white');
+                targetNav.classList.remove('hover:bg-slate-800', 'hover:text-white');
+            }
+
+            // Refresh specific components based on tab context
+            if (tabId === 'dashboard') refreshDashboard();
+            if (tabId === 'aes') renderAETable();
+            if (tabId === 'tass') renderTAssTable();
+            if (tabId === 'annual-summary') renderAnnualReport();
+            if (tabId === 'monthly-summary') renderMonthlyReport();
+            if (tabId === 'top-aes') renderTopAEReport();
+            if (tabId === 'top-tass') renderTopTAssReport();
+        }
+
+        function refreshAllViews() {
+            populateFilterOptions();
+            refreshDashboard();
+            renderAETable();
+            renderTAssTable();
+        }
+
+        /**
+         * POPULATE FILTER DROPDOWNS DYNAMICALLY
+         */
+        function populateFilterOptions() {
+            const years = new Set([2026]);
+            const munis = new Set();
+            const aeTypes = new Set();
+
+            aeRecords.forEach(r => {
+                if (r.year) years.add(r.year);
+                if (r.municipality) munis.add(r.municipality);
+                if (r.type_class) aeTypes.add(r.type_class);
+            });
+
+            tassRecords.forEach(r => {
+                if (r.year) years.add(r.year);
+                if (r.municipality) munis.add(r.municipality);
+            });
+
+            const sortedYears = Array.from(years).sort((a,b) => b - a);
+            const sortedMunis = Array.from(munis).sort();
+            const sortedTypes = Array.from(aeTypes).sort();
+
+            // Populate Year Selects
+            ['dashYear', 'filterAEYear', 'filterTAssYear', 'rptAnnualYear', 'rptMonthlyYear', 'topAEYear', 'topTAssYear'].forEach(id => {
+                const select = document.getElementById(id);
+                if (!select) return;
+                const currVal = select.value;
+                let html = (id === 'rptAnnualYear' || id === 'rptMonthlyYear' || id.startsWith('top')) ? '' : '<option value="ALL">All Years</option>';
+                sortedYears.forEach(y => { html += `<option value="${y}">${y}</option>`; });
+                select.innerHTML = html;
+                if (currVal && select.querySelector(`option[value="${currVal}"]`)) select.value = currVal;
+            });
+
+            // Populate Municipality Selects
+            ['dashMuni', 'filterAEMuni', 'filterTAssMuni', 'rptMonthlyMuni', 'topAEMuni', 'topTAssMuni'].forEach(id => {
+                const select = document.getElementById(id);
+                if (!select) return;
+                const currVal = select.value;
+                let html = '<option value="ALL">All Municipalities</option>';
+                sortedMunis.forEach(m => { html += `<option value="${m}">${m}</option>`; });
+                select.innerHTML = html;
+                if (currVal) select.value = currVal;
+            });
+
+            // AE Types
+            const typeSelect = document.getElementById('filterAEType');
+            if (typeSelect) {
+                let html = '<option value="ALL">All Types/Classes</option>';
+                sortedTypes.forEach(t => { html += `<option value="${t}">${t}</option>`; });
+                typeSelect.innerHTML = html;
+            }
+        }
+
+        /**
+         * SECTION 1: DASHBOARD LOGIC & VISUALIZATIONS
+         */
+        function refreshDashboard() {
+            const yr = document.getElementById('dashYear').value;
+            const mo = document.getElementById('dashMonth').value;
+            const mu = document.getElementById('dashMuni').value;
+
+            // Filter AEs
+            const filteredAE = aeRecords.filter(r => {
+                if (yr !== 'ALL' && r.year != yr) return false;
+                if (mo !== 'ALL' && r.month != mo) return false;
+                if (mu !== 'ALL' && r.municipality !== mu) return false;
+                return true;
+            });
+
+            // Filter TAss
+            const filteredTAss = tassRecords.filter(r => {
+                if (yr !== 'ALL' && r.year != yr) return false;
+                if (mo !== 'ALL' && r.month != mo) return false;
+                if (mu !== 'ALL' && r.municipality !== mu) return false;
+                return true;
+            });
+
+            // Sum AEs
+            let totalLocal = 0, totalForeign = 0, totalOverseas = 0, totalAEMale = 0, totalAEFemale = 0;
+            const aeEsts = new Set();
+            filteredAE.forEach(r => {
+                totalLocal += Number(r.local_tourist || 0);
+                totalForeign += Number(r.foreign_tourist || 0);
+                totalOverseas += Number(r.overseas_filipino || 0);
+                totalAEMale += Number(r.total_male || 0);
+                totalAEFemale += Number(r.total_female || 0);
+                if (r.establishment) aeEsts.add(r.establishment);
+            });
+            const totalAEsArrivals = totalLocal + totalForeign + totalOverseas;
+
+            // Sum TAss
+            let totalTM = 0, totalOM = 0, totalFCR = 0, totalTAssMale = 0, totalTAssFemale = 0;
+            const tassAtts = new Set();
+            filteredTAss.forEach(r => {
+                totalTM += Number(r.tm_sum || 0);
+                totalOM += Number(r.om_sum || 0);
+                totalFCR += Number(r.fcr_sum || 0);
+                totalTAssMale += Number(r.total_male || 0);
+                totalTAssFemale += Number(r.total_female || 0);
+                if (r.attraction) tassAtts.add(r.attraction);
+            });
+            const totalTAssVisitors = totalTM + totalOM + totalFCR;
+
+            const grandCombined = totalAEsArrivals + totalTAssVisitors;
+            const grandMale = totalAEMale + totalTAssMale;
+            const grandFemale = totalAEFemale + totalTAssFemale;
+
+            // Update UI Cards
+            document.getElementById('cardTotalAEs').innerText = totalAEsArrivals.toLocaleString();
+            document.getElementById('cardAECount').innerText = aeEsts.size;
+
+            document.getElementById('cardTotalTAss').innerText = totalTAssVisitors.toLocaleString();
+            document.getElementById('cardTAssCount').innerText = tassAtts.size;
+
+            document.getElementById('cardCombinedVisitors').innerText = grandCombined.toLocaleString();
+
+            const foreignShare = totalAEsArrivals > 0 ? (((totalForeign + totalOverseas) / totalAEsArrivals) * 100).toFixed(1) : 0;
+            document.getElementById('cardForeignOverseas').innerText = (totalForeign + totalOverseas).toLocaleString();
+            document.getElementById('cardForeignPercent').innerText = `${foreignShare}%`;
+
+            document.getElementById('cardLocalTourists').innerText = totalLocal.toLocaleString();
+            document.getElementById('cardForeignTourists').innerText = totalForeign.toLocaleString();
+            document.getElementById('cardOverseasFilipinos').innerText = totalOverseas.toLocaleString();
+
+            document.getElementById('cardTM').innerText = totalTM.toLocaleString();
+            document.getElementById('cardOM').innerText = totalOM.toLocaleString();
+            document.getElementById('cardFCR').innerText = totalFCR.toLocaleString();
+
+            document.getElementById('cardTotalMale').innerText = grandMale.toLocaleString();
+            document.getElementById('cardTotalFemale').innerText = grandFemale.toLocaleString();
+
+            const totalGender = grandMale + grandFemale;
+            const malePct = totalGender > 0 ? ((grandMale / totalGender) * 100).toFixed(1) : 50;
+            const femalePct = totalGender > 0 ? ((grandFemale / totalGender) * 100).toFixed(1) : 50;
+            document.getElementById('barMale').style.width = `${malePct}%`;
+            document.getElementById('barFemale').style.width = `${femalePct}%`;
+
+            renderDashboardCharts(filteredAE, filteredTAss);
+        }
+
+        function resetDashFilters() {
+            document.getElementById('dashYear').value = 'ALL';
+            document.getElementById('dashMonth').value = 'ALL';
+            document.getElementById('dashMuni').value = 'ALL';
+            refreshDashboard();
+        }
+
+        function renderDashboardCharts(aeList, tassList) {
+            // Chart 1: Monthly Trend
+            const monthlyAE = new Array(12).fill(0);
+            const monthlyTAss = new Array(12).fill(0);
+
+            aeList.forEach(r => { if (r.month >= 1 && r.month <= 12) monthlyAE[r.month - 1] += Number(r.total_lf || 0); });
+            tassList.forEach(r => { if (r.month >= 1 && r.month <= 12) monthlyTAss[r.month - 1] += Number(r.grand_total || 0); });
+
+            const ctx1 = document.getElementById('chartMonthlyTrend').getContext('2d');
+            if (chartMonthlyTrendObj) chartMonthlyTrendObj.destroy();
+            chartMonthlyTrendObj = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: MONTH_NAMES.map(m => m.substring(0, 3)),
+                    datasets: [
+                        { label: 'Tourist Arrivals (AEs)', data: monthlyAE, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.3 },
+                        { label: 'Same-Day Visitors (TAss)', data: monthlyTAss, borderColor: '#14b8a6', backgroundColor: 'rgba(20, 184, 166, 0.1)', fill: true, tension: 0.3 }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+            });
+
+            // Chart 2: By Municipality
+            const muniMap = {};
+            aeList.forEach(r => {
+                const m = r.municipality || 'Unspecified';
+                muniMap[m] = (muniMap[m] || 0) + Number(r.total_lf || 0);
+            });
+            tassList.forEach(r => {
+                const m = r.municipality || 'Unspecified';
+                muniMap[m] = (muniMap[m] || 0) + Number(r.grand_total || 0);
+            });
+
+            const sortedMunis = Object.keys(muniMap).sort((a,b) => muniMap[b] - muniMap[a]).slice(0, 7);
+            const muniData = sortedMunis.map(m => muniMap[m]);
+
+            const ctx2 = document.getElementById('chartMunicipality').getContext('2d');
+            if (chartMunicipalityObj) chartMunicipalityObj.destroy();
+            chartMunicipalityObj = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels: sortedMunis,
+                    datasets: [{ label: 'Combined Visitors', data: muniData, backgroundColor: '#0f766e', borderRadius: 6 }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+        }
+
+        /**
+         * SECTION 2: TOURIST ARRIVALS (AEs) TABLE & CRUD
+         */
+        function renderAETable() {
+            const search = document.getElementById('filterAESearch').value.toLowerCase();
+            const muni = document.getElementById('filterAEMuni').value;
+            const year = document.getElementById('filterAEYear').value;
+            const month = document.getElementById('filterAEMonth').value;
+            const type = document.getElementById('filterAEType').value;
+
+            const filtered = aeRecords.filter(r => {
+                if (muni !== 'ALL' && r.municipality !== muni) return false;
+                if (year !== 'ALL' && r.year != year) return false;
+                if (month !== 'ALL' && r.month != month) return false;
+                if (type !== 'ALL' && r.type_class !== type) return false;
+                if (search) {
+                    const matchStr = `${r.establishment} ${r.municipality} ${r.province} ${r.type_class}`.toLowerCase();
+                    if (!matchStr.includes(search)) return false;
+                }
+                return true;
+            });
+
+            document.getElementById('aeRecordCount').innerText = filtered.length;
+            const tbody = document.getElementById('aeTableBody');
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="11" class="p-6 text-center text-slate-400">No Accommodation Establishment records found.</td></tr>`;
+                return;
+            }
+
+            let html = '';
+            filtered.forEach(r => {
+                const totalLF = Number(r.local_tourist||0) + Number(r.foreign_tourist||0) + Number(r.overseas_filipino||0);
+                const totalMF = Number(r.total_male||0) + Number(r.total_female||0);
+
+                html += `<tr class="hover:bg-slate-50 border-b">
+                    <td class="p-3"><div class="font-bold text-slate-800">${r.municipality}</div><div class="text-[10px] text-slate-400">${r.province}</div></td>
+                    <td class="p-3"><div>${MONTH_NAMES[r.month - 1] || r.month}</div><div class="text-[10px] text-slate-400">${r.year}</div></td>
+                    <td class="p-3"><div class="font-bold text-slate-800">${r.establishment}</div><div class="text-[10px] text-teal-600">${r.type_class || 'N/A'}</div></td>
+                    <td class="p-3 text-right">${Number(r.local_tourist||0).toLocaleString()}</td>
+                    <td class="p-3 text-right">${Number(r.foreign_tourist||0).toLocaleString()}</td>
+                    <td class="p-3 text-right">${Number(r.overseas_filipino||0).toLocaleString()}</td>
+                    <td class="p-3 text-right font-bold bg-slate-50 text-slate-900">${totalLF.toLocaleString()}</td>
+                    <td class="p-3 text-right">${Number(r.total_male||0).toLocaleString()}</td>
+                    <td class="p-3 text-right">${Number(r.total_female||0).toLocaleString()}</td>
+                    <td class="p-3 text-right font-bold bg-slate-50 text-slate-900">${totalMF.toLocaleString()}</td>
+                    <td class="p-3 text-center space-x-1">
+                        <button onclick="editAERecord(${r.id})" class="text-blue-600 hover:text-blue-800 p-1"><i class="fa-solid fa-pen-to-square"></i></button>
+                        <button onclick="deleteAERecord(${r.id})" class="text-rose-600 hover:text-rose-800 p-1"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>`;
+            });
+
+            tbody.innerHTML = html;
+        }
+
+        function calcAETotals() {
+            const l = Math.max(0, Number(document.getElementById('ae_local').value || 0));
+            const f = Math.max(0, Number(document.getElementById('ae_foreign').value || 0));
+            const o = Math.max(0, Number(document.getElementById('ae_overseas').value || 0));
+            const m = Math.max(0, Number(document.getElementById('ae_male').value || 0));
+            const fem = Math.max(0, Number(document.getElementById('ae_female').value || 0));
+
+            document.getElementById('ae_calc_lf').innerText = (l + f + o).toLocaleString();
+            document.getElementById('ae_calc_mf').innerText = (m + fem).toLocaleString();
+        }
+
+        async function saveAERecord(e) {
+            e.preventDefault();
+            const id = document.getElementById('ae_id').value;
+            const prov = document.getElementById('ae_province').value.trim();
+            const muni = document.getElementById('ae_municipality').value.trim();
+            const est = document.getElementById('ae_establishment').value.trim();
+            const year = Number(document.getElementById('ae_year').value);
+            const month = Number(document.getElementById('ae_month').value);
+
+            const local = Math.max(0, Number(document.getElementById('ae_local').value || 0));
+            const foreign = Math.max(0, Number(document.getElementById('ae_foreign').value || 0));
+            const overseas = Math.max(0, Number(document.getElementById('ae_overseas').value || 0));
+            const male = Math.max(0, Number(document.getElementById('ae_male').value || 0));
+            const female = Math.max(0, Number(document.getElementById('ae_female').value || 0));
+
+            const total_lf = local + foreign + overseas;
+            const total_mf = male + female;
+
+            const record = {
+                province: prov,
+                municipality: muni,
+                establishment: est,
+                type_class: document.getElementById('ae_type_class').value.trim(),
+                year: year,
+                month: month,
+                local_tourist: local,
+                foreign_tourist: foreign,
+                overseas_filipino: overseas,
+                total_lf: total_lf,
+                total_male: male,
+                total_female: female,
+                total_mf: total_mf
+            };
+
+            // Unique key check logic (Province + Municipality + Year + Month + Establishment)
+            const existing = aeRecords.find(r => 
+                r.province.toLowerCase() === prov.toLowerCase() &&
+                r.municipality.toLowerCase() === muni.toLowerCase() &&
+                r.year == year &&
+                r.month == month &&
+                r.establishment.toLowerCase() === est.toLowerCase() &&
+                (!id || r.id != id)
+            );
+
+            if (existing) {
+                if (id) {
+                    record.id = Number(id);
+                } else {
+                    // Auto-overwrite existing matching key record
+                    record.id = existing.id;
+                    showToast(`Updated existing record for ${est} (${MONTH_NAMES[month-1]} ${year})`, "info");
+                }
+            } else if (id) {
+                record.id = Number(id);
+            }
+
+            await putRecordToStore("aes", record);
+            await loadAllRecords();
+            closeModal('modalAE');
+            refreshAllViews();
+            showToast("Accommodation Establishment record saved successfully.", "success");
+        }
+
+        function editAERecord(id) {
+            const r = aeRecords.find(x => x.id === id);
+            if (!r) return;
+            document.getElementById('ae_id').value = r.id;
+            document.getElementById('ae_province').value = r.province;
+            document.getElementById('ae_municipality').value = r.municipality;
+            document.getElementById('ae_establishment').value = r.establishment;
+            document.getElementById('ae_type_class').value = r.type_class || '';
+            document.getElementById('ae_year').value = r.year;
+            document.getElementById('ae_month').value = r.month;
+            document.getElementById('ae_local').value = r.local_tourist;
+            document.getElementById('ae_foreign').value = r.foreign_tourist;
+            document.getElementById('ae_overseas').value = r.overseas_filipino;
+            document.getElementById('ae_male').value = r.total_male;
+            document.getElementById('ae_female').value = r.total_female;
+
+            calcAETotals();
+            document.getElementById('modalAETitle').innerText = "Edit Accommodation Establishment Record";
+            openModal('modalAE');
+        }
+
+        async function deleteAERecord(id) {
+            if (confirm("Are you sure you want to delete this AE record?")) {
+                await deleteRecordFromStore("aes", id);
+                await loadAllRecords();
+                refreshAllViews();
+                showToast("AE Record deleted.", "info");
+            }
+        }
+
+        /**
+         * SECTION 3: SAME-DAY VISITORS (TAss) TABLE & CRUD
+         */
+        function renderTAssTable() {
+            const search = document.getElementById('filterTAssSearch').value.toLowerCase();
+            const muni = document.getElementById('filterTAssMuni').value;
+            const year = document.getElementById('filterTAssYear').value;
+            const month = document.getElementById('filterTAssMonth').value;
+
+            const filtered = tassRecords.filter(r => {
+                if (muni !== 'ALL' && r.municipality !== muni) return false;
+                if (year !== 'ALL' && r.year != year) return false;
+                if (month !== 'ALL' && r.month != month) return false;
+                if (search) {
+                    const matchStr = `${r.attraction} ${r.municipality} ${r.province}`.toLowerCase();
+                    if (!matchStr.includes(search)) return false;
+                }
+                return true;
+            });
+
+            document.getElementById('tassRecordCount').innerText = filtered.length;
+            const tbody = document.getElementById('tassTableBody');
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" class="p-6 text-center text-slate-400">No Same-Day Visitor records found.</td></tr>`;
+                return;
+            }
+
+            let html = '';
+            filtered.forEach(r => {
+                html += `<tr class="hover:bg-slate-50 border-b">
+                    <td class="p-3"><div class="font-bold text-slate-800">${r.municipality}</div><div class="text-[10px] text-slate-400">${r.province}</div></td>
+                    <td class="p-3"><div>${MONTH_NAMES[r.month - 1] || r.month}</div><div class="text-[10px] text-slate-400">${r.year}</div></td>
+                    <td class="p-3 font-bold text-slate-800">${r.attraction}</td>
+                    <td class="p-3 text-right">${Number(r.tm_sum||0).toLocaleString()}</td>
+                    <td class="p-3 text-right">${Number(r.om_sum||0).toLocaleString()}</td>
+                    <td class="p-3 text-right">${Number(r.fcr_sum||0).toLocaleString()}</td>
+                    <td class="p-3 text-right">${Number(r.total_male||0).toLocaleString()}</td>
+                    <td class="p-3 text-right">${Number(r.total_female||0).toLocaleString()}</td>
+                    <td class="p-3 text-right font-bold bg-slate-50 text-teal-700">${Number(r.grand_total||0).toLocaleString()}</td>
+                    <td class="p-3 text-center space-x-1">
+                        <button onclick="editTAssRecord(${r.id})" class="text-blue-600 hover:text-blue-800 p-1"><i class="fa-solid fa-pen-to-square"></i></button>
+                        <button onclick="deleteTAssRecord(${r.id})" class="text-rose-600 hover:text-rose-800 p-1"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>`;
+            });
+
+            tbody.innerHTML = html;
+        }
+
+        function calcTAssTotals() {
+            const tm_m = Math.max(0, Number(document.getElementById('tass_tm_m').value || 0));
+            const tm_f = Math.max(0, Number(document.getElementById('tass_tm_f').value || 0));
+            const om_m = Math.max(0, Number(document.getElementById('tass_om_m').value || 0));
+            const om_f = Math.max(0, Number(document.getElementById('tass_om_f').value || 0));
+            const fcr_m = Math.max(0, Number(document.getElementById('tass_fcr_m').value || 0));
+            const fcr_f = Math.max(0, Number(document.getElementById('tass_fcr_f').value || 0));
+
+            const tm_sum = tm_m + tm_f;
+            const om_sum = om_m + om_f;
+            const fcr_sum = fcr_m + fcr_f;
+
+            const total_male = tm_m + om_m + fcr_m;
+            const total_female = tm_f + om_f + fcr_f;
+            const grand_total = total_male + total_female;
+
+            document.getElementById('calc_tm_sum').innerText = tm_sum.toLocaleString();
+            document.getElementById('calc_om_sum').innerText = om_sum.toLocaleString();
+            document.getElementById('calc_fcr_sum').innerText = fcr_sum.toLocaleString();
+
+            document.getElementById('calc_tass_male').innerText = total_male.toLocaleString();
+            document.getElementById('calc_tass_female').innerText = total_female.toLocaleString();
+            document.getElementById('calc_tass_grand').innerText = grand_total.toLocaleString();
+        }
+
+        async function saveTAssRecord(e) {
+            e.preventDefault();
+            const id = document.getElementById('tass_id').value;
+            const prov = document.getElementById('tass_province').value.trim();
+            const muni = document.getElementById('tass_municipality').value.trim();
+            const attr = document.getElementById('tass_attraction').value.trim();
+            const year = Number(document.getElementById('tass_year').value);
+            const month = Number(document.getElementById('tass_month').value);
+
+            const tm_m = Math.max(0, Number(document.getElementById('tass_tm_m').value || 0));
+            const tm_f = Math.max(0, Number(document.getElementById('tass_tm_f').value || 0));
+            const om_m = Math.max(0, Number(document.getElementById('tass_om_m').value || 0));
+            const om_f = Math.max(0, Number(document.getElementById('tass_om_f').value || 0));
+            const fcr_m = Math.max(0, Number(document.getElementById('tass_fcr_m').value || 0));
+            const fcr_f = Math.max(0, Number(document.getElementById('tass_fcr_f').value || 0));
+
+            const tm_sum = tm_m + tm_f;
+            const om_sum = om_m + om_f;
+            const fcr_sum = fcr_m + fcr_f;
+
+            const total_male = tm_m + om_m + fcr_m;
+            const total_female = tm_f + om_f + fcr_f;
+            const grand_total = total_male + total_female;
+
+            const record = {
+                province: prov,
+                municipality: muni,
+                attraction: attr,
+                year: year,
+                month: month,
+                tm_m: tm_m, tm_f: tm_f, tm_sum: tm_sum,
+                om_m: om_m, om_f: om_f, om_sum: om_sum,
+                fcr_m: fcr_m, fcr_f: fcr_f, fcr_sum: fcr_sum,
+                total_male: total_male,
+                total_female: total_female,
+                grand_total: grand_total
+            };
+
+            // Unique key check (Province + Municipality + Year + Month + Attraction)
+            const existing = tassRecords.find(r => 
+                r.province.toLowerCase() === prov.toLowerCase() &&
+                r.municipality.toLowerCase() === muni.toLowerCase() &&
+                r.year == year &&
+                r.month == month &&
+                r.attraction.toLowerCase() === attr.toLowerCase() &&
+                (!id || r.id != id)
+            );
+
+            if (existing) {
+                if (id) {
+                    record.id = Number(id);
+                } else {
+                    record.id = existing.id;
+                    showToast(`Updated existing record for ${attr} (${MONTH_NAMES[month-1]} ${year})`, "info");
+                }
+            } else if (id) {
+                record.id = Number(id);
+            }
+
+            await putRecordToStore("tass", record);
+            await loadAllRecords();
+            closeModal('modalTAss');
+            refreshAllViews();
+            showToast("Same-Day Visitor record saved successfully.", "success");
+        }
+
+        function editTAssRecord(id) {
+            const r = tassRecords.find(x => x.id === id);
+            if (!r) return;
+            document.getElementById('tass_id').value = r.id;
+            document.getElementById('tass_province').value = r.province;
+            document.getElementById('tass_municipality').value = r.municipality;
+            document.getElementById('tass_attraction').value = r.attraction;
+            document.getElementById('tass_year').value = r.year;
+            document.getElementById('tass_month').value = r.month;
+
+            document.getElementById('tass_tm_m').value = r.tm_m;
+            document.getElementById('tass_tm_f').value = r.tm_f;
+            document.getElementById('tass_om_m').value = r.om_m;
+            document.getElementById('tass_om_f').value = r.om_f;
+            document.getElementById('tass_fcr_m').value = r.fcr_m;
+            document.getElementById('tass_fcr_f').value = r.fcr_f;
+
+            calcTAssTotals();
+            document.getElementById('modalTAssTitle').innerText = "Edit Same-Day Visitor Record";
+            openModal('modalTAss');
+        }
+
+        async function deleteTAssRecord(id) {
+            if (confirm("Are you sure you want to delete this TAss record?")) {
+                await deleteRecordFromStore("tass", id);
+                await loadAllRecords();
+                refreshAllViews();
+                showToast("TAss Record deleted.", "info");
+            }
+        }
+
+        /**
+         * SECTION 4: BULK EXCEL UPLOAD IMPLEMENTATION WITH OVERWRITE RULE
+         * Excel (.xlsx/.xls) is the standard import format.
+         */
+        function readExcelFile(file) {
+            return new Promise((resolve, reject) => {
+                if (typeof XLSX === "undefined") {
+                    reject(new Error("Excel library did not load. Please check your internet connection and reload the page."));
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const workbook = XLSX.read(e.target.result, { type: 'array', cellDates: false });
+                        if (!workbook.SheetNames.length) throw new Error("Excel workbook has no worksheets.");
+                        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+                        resolve(rows);
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                reader.onerror = () => reject(new Error("Unable to read the Excel file."));
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        function normalizeExcelHeader(h) {
+            return String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        }
+
+        function rowValue(row, headers, aliases, fallbackIndex = -1) {
+            for (const alias of aliases) {
+                const idx = headers.indexOf(normalizeExcelHeader(alias));
+                if (idx !== -1) return row[idx];
+            }
+            return fallbackIndex >= 0 ? row[fallbackIndex] : "";
+        }
+
+        // Process AE Bulk Excel
+        async function processAEBulkExcel() {
+            const fileInput = document.getElementById('bulkAEFile');
+            if (!fileInput.files.length) { showToast("Please select an Excel file.", "warning"); return; }
+
+            try {
+                const rows = await readExcelFile(fileInput.files[0]);
+                if (rows.length < 2) { showToast("Excel file is empty or missing data rows.", "warning"); return; }
+
+                const headers = rows[0].map(normalizeExcelHeader);
+                pendingBulkAE = [];
+                let newCount = 0, updateCount = 0, skippedCount = 0;
+                const errors = [];
+
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    if (!row || row.every(v => String(v ?? '').trim() === '')) continue;
+
+                    const prov = rowValue(row, headers, ['Province', 'Province/HUC/ICC'], 0) || 'Occidental Mindoro';
+                    const muni = rowValue(row, headers, ['Municipality', 'Municipality/City'], 1);
+                    const yr = parseInt(rowValue(row, headers, ['Year'], 2));
+                    let mo = rowValue(row, headers, ['Month'], 3);
+                    const est = rowValue(row, headers, ['Accommodation Establishment', 'Establishment'], 4);
+                    const type = rowValue(row, headers, ['Type Class', 'Type-Class', 'Type/Class'], 5) || 'General';
+                    const local = parseInt(rowValue(row, headers, ['Local Tourist', 'Local'], 6)) || 0;
+                    const foreign = parseInt(rowValue(row, headers, ['Foreign Tourist', 'Foreign'], 7)) || 0;
+                    const overseas = parseInt(rowValue(row, headers, ['Overseas Filipino', 'Overseas'], 8)) || 0;
+                    const male = parseInt(rowValue(row, headers, ['Total Male', 'Male'], 9)) || 0;
+                    const female = parseInt(rowValue(row, headers, ['Total Female', 'Female'], 10)) || 0;
+
+                    if (isNaN(mo)) {
+                        const mIndex = MONTH_NAMES.findIndex(m => m.toLowerCase().startsWith(String(mo).toLowerCase()));
+                        mo = mIndex !== -1 ? mIndex + 1 : 0;
+                    } else mo = parseInt(mo);
+
+                    if (!muni || !yr || !mo || mo < 1 || mo > 12 || !est) {
+                        errors.push(`Row ${i+1}: Missing/invalid Municipality, Year, Month, or Establishment.`);
+                        skippedCount++;
+                        continue;
+                    }
+
+                    const record = {
+                        province: String(prov).trim(),
+                        municipality: String(muni).trim(),
+                        year: yr,
+                        month: mo,
+                        establishment: String(est).trim(),
+                        type_class: String(type).trim(),
+                        local_tourist: local,
+                        foreign_tourist: foreign,
+                        overseas_filipino: overseas,
+                        total_lf: local + foreign + overseas,
+                        total_male: male,
+                        total_female: female,
+                        total_mf: male + female
+                    };
+
+                    const existing = aeRecords.find(r =>
+                        r.province === record.province &&
+                        r.municipality === record.municipality &&
+                        r.year == record.year &&
+                        r.month == record.month &&
+                        r.establishment === record.establishment
+                    );
+
+                    if (existing) {
+                        pendingBulkAE.push({ record, isUpdate: true, existingId: existing.id });
+                        updateCount++;
+                    } else {
+                        pendingBulkAE.push({ record, isUpdate: false });
+                        newCount++;
+                    }
+                }
+
+                document.getElementById('bulkAENewCount').innerText = newCount;
+                document.getElementById('bulkAEUpdateCount').innerText = updateCount;
+                document.getElementById('bulkAESkippedCount').innerText = skippedCount;
+                document.getElementById('bulkAESummary').classList.remove('hidden');
+
+                const previewBody = document.getElementById('bulkAEPreviewBody');
+                previewBody.innerHTML = '';
+                pendingBulkAE.slice(0, 50).forEach(item => {
+                    const r = item.record;
+                    previewBody.innerHTML += `<tr class="border-b">
+                        <td class="p-2 font-bold ${item.isUpdate ? 'text-amber-600' : 'text-emerald-600'}">${item.isUpdate ? 'UPDATE' : 'NEW'}</td>
+                        <td class="p-2">${r.municipality}</td>
+                        <td class="p-2 font-semibold">${r.establishment}</td>
+                        <td class="p-2">${r.year} / ${MONTH_NAMES[r.month-1]}</td>
+                        <td class="p-2">${r.local_tourist}</td>
+                        <td class="p-2">${r.foreign_tourist}</td>
+                        <td class="p-2 font-bold">${r.total_lf}</td>
+                        <td class="p-2 text-slate-400">Valid</td>
+                    </tr>`;
+                });
+                document.getElementById('bulkAEPreviewContainer').classList.remove('hidden');
+
+                if (errors.length) {
+                    const errBox = document.getElementById('bulkAEErrorLog');
+                    errBox.classList.remove('hidden');
+                    errBox.innerHTML = `<strong>Import Warning Log (${errors.length}):</strong><br>` + errors.join('<br>');
+                } else {
+                    document.getElementById('bulkAEErrorLog').classList.add('hidden');
+                }
+                document.getElementById('btnConfirmBulkAE').disabled = false;
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to read Excel file: " + err.message, "danger");
+            }
+        }
+
+        async function commitAEBulkImport() {
+            if (!pendingBulkAE.length) {
+                showToast("No valid AE records are ready for import. Click Process Excel first and check the preview/errors.", "warning");
+                return;
+            }
+            const importCount = pendingBulkAE.length;
+            for (let item of pendingBulkAE) {
+                if (item.isUpdate && item.existingId) item.record.id = item.existingId;
+                await putRecordToStore("aes", item.record);
+            }
+            await loadAllRecords();
+            closeModal('modalBulkAE');
+            refreshAllViews();
+            showToast(`Bulk Import Complete! Added/Updated ${importCount} AE records.`, "success");
+        }
+
+        // Process TAss Bulk Excel
+        async function processTAssBulkExcel() {
+            const fileInput = document.getElementById('bulkTAssFile');
+            if (!fileInput.files.length) { showToast("Please select an Excel file.", "warning"); return; }
+
+            try {
+                const rows = await readExcelFile(fileInput.files[0]);
+                if (rows.length < 2) { showToast("Excel file is empty or missing data rows.", "warning"); return; }
+
+                const headers = rows[0].map(normalizeExcelHeader);
+                pendingBulkTAss = [];
+                let newCount = 0, updateCount = 0, skippedCount = 0;
+                const errors = [];
+
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    if (!row || row.every(v => String(v ?? '').trim() === '')) continue;
+
+                    const prov = rowValue(row, headers, ['Province', 'Province/HUC/ICC'], 0) || 'Occidental Mindoro';
+                    const muni = rowValue(row, headers, ['Municipality', 'Municipality/City'], 1);
+                    const yr = parseInt(rowValue(row, headers, ['Year'], 2));
+                    let mo = rowValue(row, headers, ['Month'], 3);
+                    const attr = rowValue(row, headers, ['Tourist Attraction', 'Attraction'], 4);
+
+                    const tm_m = parseInt(rowValue(row, headers, ['TM(M)', 'Male TM(M)', 'TM Male'], 5)) || 0;
+                    const tm_f = parseInt(rowValue(row, headers, ['TM(F)', 'Female TM(F)', 'TM Female'], 6)) || 0;
+                    const om_m = parseInt(rowValue(row, headers, ['OM(M)', 'Male OM(M)', 'OM Male'], 7)) || 0;
+                    const om_f = parseInt(rowValue(row, headers, ['OM(F)', 'Female OM(F)', 'OM Female'], 8)) || 0;
+                    const fcr_m = parseInt(rowValue(row, headers, ['FCR(M)', 'Male FCR(M)', 'FCR Male'], 9)) || 0;
+                    const fcr_f = parseInt(rowValue(row, headers, ['FCR(F)', 'Female FCR(F)', 'FCR Female'], 10)) || 0;
+
+                    if (isNaN(mo)) {
+                        const mIndex = MONTH_NAMES.findIndex(m => m.toLowerCase().startsWith(String(mo).toLowerCase()));
+                        mo = mIndex !== -1 ? mIndex + 1 : 0;
+                    } else mo = parseInt(mo);
+
+                    if (!muni || !yr || !mo || mo < 1 || mo > 12 || !attr) {
+                        errors.push(`Row ${i+1}: Missing/invalid Municipality, Year, Month, or Tourist Attraction.`);
+                        skippedCount++;
+                        continue;
+                    }
+
+                    const record = {
+                        province: String(prov).trim(),
+                        municipality: String(muni).trim(),
+                        year: yr,
+                        month: mo,
+                        attraction: String(attr).trim(),
+                        tm_m, tm_f, tm_sum: tm_m + tm_f,
+                        om_m, om_f, om_sum: om_m + om_f,
+                        fcr_m, fcr_f, fcr_sum: fcr_m + fcr_f,
+                        total_male: tm_m + om_m + fcr_m,
+                        total_female: tm_f + om_f + fcr_f,
+                        grand_total: tm_m + tm_f + om_m + om_f + fcr_m + fcr_f
+                    };
+
+                    const existing = tassRecords.find(r =>
+                        r.province === record.province &&
+                        r.municipality === record.municipality &&
+                        r.year == record.year &&
+                        r.month == record.month &&
+                        r.attraction === record.attraction
+                    );
+
+                    if (existing) {
+                        pendingBulkTAss.push({ record, isUpdate: true, existingId: existing.id });
+                        updateCount++;
+                    } else {
+                        pendingBulkTAss.push({ record, isUpdate: false });
+                        newCount++;
+                    }
+                }
+
+                document.getElementById('bulkTAssNewCount').innerText = newCount;
+                document.getElementById('bulkTAssUpdateCount').innerText = updateCount;
+                document.getElementById('bulkTAssSkippedCount').innerText = skippedCount;
+                document.getElementById('bulkTAssSummary').classList.remove('hidden');
+
+                const previewBody = document.getElementById('bulkTAssPreviewBody');
+                previewBody.innerHTML = '';
+                pendingBulkTAss.slice(0, 50).forEach(item => {
+                    const r = item.record;
+                    previewBody.innerHTML += `<tr class="border-b">
+                        <td class="p-2 font-bold ${item.isUpdate ? 'text-amber-600' : 'text-emerald-600'}">${item.isUpdate ? 'UPDATE' : 'NEW'}</td>
+                        <td class="p-2">${r.municipality}</td>
+                        <td class="p-2 font-semibold">${r.attraction}</td>
+                        <td class="p-2">${r.year} / ${MONTH_NAMES[r.month-1]}</td>
+                        <td class="p-2">${r.tm_sum}</td>
+                        <td class="p-2">${r.om_sum}</td>
+                        <td class="p-2">${r.fcr_sum}</td>
+                        <td class="p-2 font-bold">${r.grand_total}</td>
+                        <td class="p-2 text-slate-400">Valid</td>
+                    </tr>`;
+                });
+                document.getElementById('bulkTAssPreviewContainer').classList.remove('hidden');
+
+                if (errors.length) {
+                    const errBox = document.getElementById('bulkTAssErrorLog');
+                    errBox.classList.remove('hidden');
+                    errBox.innerHTML = `<strong>Import Warning Log (${errors.length}):</strong><br>` + errors.join('<br>');
+                } else {
+                    document.getElementById('bulkTAssErrorLog').classList.add('hidden');
+                }
+                document.getElementById('btnConfirmBulkTAss').disabled = false;
+            } catch (err) {
+                console.error(err);
+                showToast("Failed to read Excel file: " + err.message, "danger");
+            }
+        }
+
+        async function commitTAssBulkImport() {
+            if (!pendingBulkTAss.length) {
+                showToast("No valid TAss records are ready for import. Click Process Excel first and check the preview/errors.", "warning");
+                return;
+            }
+            const importCount = pendingBulkTAss.length;
+            for (let item of pendingBulkTAss) {
+                if (item.isUpdate && item.existingId) item.record.id = item.existingId;
+                await putRecordToStore("tass", item.record);
+            }
+            await loadAllRecords();
+            closeModal('modalBulkTAss');
+            refreshAllViews();
+            showToast(`Bulk Import Complete! Added/Updated ${importCount} TAss records.`, "success");
+        }
+
+        /**
+         * SECTION 5: ANNUAL SUMMARY REPORT GENERATION
+         */
+        function renderAnnualReport() {
+            const yr = document.getElementById('rptAnnualYear').value || 2026;
+            document.getElementById('rptAnnualYearLbl').innerText = yr;
+
+            // Collect all unique municipalities
+            const munis = new Set();
+            aeRecords.forEach(r => { if (r.year == yr) munis.add(r.municipality); });
+            tassRecords.forEach(r => { if (r.year == yr) munis.add(r.municipality); });
+
+            const sortedMunis = Array.from(munis).sort();
+            const tbody = document.getElementById('rptAnnualBody');
+            tbody.innerHTML = '';
+
+            let gLocal=0, gForeign=0, gOverseas=0, gAEsTotal=0;
+            let gTM=0, gOM=0, gFCR=0, gTAssTotal=0;
+
+            sortedMunis.forEach(m => {
+                let local=0, foreign=0, overseas=0;
+                aeRecords.filter(r => r.year == yr && r.municipality === m).forEach(r => {
+                    local += Number(r.local_tourist||0);
+                    foreign += Number(r.foreign_tourist||0);
+                    overseas += Number(r.overseas_filipino||0);
+                });
+                const totalAEs = local + foreign + overseas;
+
+                let tm=0, om=0, fcr=0;
+                tassRecords.filter(r => r.year == yr && r.municipality === m).forEach(r => {
+                    tm += Number(r.tm_sum||0);
+                    om += Number(r.om_sum||0);
+                    fcr += Number(r.fcr_sum||0);
+                });
+                const totalTAss = tm + om + fcr;
+                const combined = totalAEs + totalTAss;
+
+                gLocal+=local; gForeign+=foreign; gOverseas+=overseas; gAEsTotal+=totalAEs;
+                gTM+=tm; gOM+=om; gFCR+=fcr; gTAssTotal+=totalTAss;
+
+                tbody.innerHTML += `<tr class="hover:bg-slate-50 border-b">
+                    <td class="p-2 font-bold border-r text-slate-800">${m}</td>
+                    <td class="p-2 text-right">${local.toLocaleString()}</td>
+                    <td class="p-2 text-right">${foreign.toLocaleString()}</td>
+                    <td class="p-2 text-right">${overseas.toLocaleString()}</td>
+                    <td class="p-2 text-right font-bold bg-blue-50/50 border-r text-blue-900">${totalAEs.toLocaleString()}</td>
+                    <td class="p-2 text-right">${tm.toLocaleString()}</td>
+                    <td class="p-2 text-right">${om.toLocaleString()}</td>
+                    <td class="p-2 text-right">${fcr.toLocaleString()}</td>
+                    <td class="p-2 text-right font-bold bg-teal-50/50 border-r text-teal-900">${totalTAss.toLocaleString()}</td>
+                    <td class="p-2 text-right font-bold bg-amber-50 text-amber-900">${combined.toLocaleString()}</td>
+                </tr>`;
+            });
+
+            document.getElementById('rptAnnualFoot').innerHTML = `<tr>
+                <td class="p-2 border-r">PROVINCIAL TOTAL</td>
+                <td class="p-2 text-right">${gLocal.toLocaleString()}</td>
+                <td class="p-2 text-right">${gForeign.toLocaleString()}</td>
+                <td class="p-2 text-right">${gOverseas.toLocaleString()}</td>
+                <td class="p-2 text-right border-r text-blue-200">${gAEsTotal.toLocaleString()}</td>
+                <td class="p-2 text-right">${gTM.toLocaleString()}</td>
+                <td class="p-2 text-right">${gOM.toLocaleString()}</td>
+                <td class="p-2 text-right">${gFCR.toLocaleString()}</td>
+                <td class="p-2 text-right border-r text-teal-200">${gTAssTotal.toLocaleString()}</td>
+                <td class="p-2 text-right text-amber-300 font-extrabold">${(gAEsTotal + gTAssTotal).toLocaleString()}</td>
+            </tr>`;
+        }
+
+        /**
+         * SECTION 6: MONTHLY SUMMARY REPORT GENERATION
+         */
+        function renderMonthlyReport() {
+            const yr = document.getElementById('rptMonthlyYear').value || 2026;
+            const mu = document.getElementById('rptMonthlyMuni').value;
+
+            document.getElementById('rptMonthlyYearLbl').innerText = yr;
+            document.getElementById('rptMonthlyMuniLbl').innerText = mu === 'ALL' ? 'All Municipalities' : mu;
+
+            const tbody = document.getElementById('rptMonthlyBody');
+            tbody.innerHTML = '';
+
+            let gLocal=0, gForeign=0, gOverseas=0, gAEsTotal=0;
+            let gTM=0, gOM=0, gFCR=0, gTAssTotal=0;
+
+            for (let m = 1; m <= 12; m++) {
+                let local=0, foreign=0, overseas=0;
+                aeRecords.filter(r => r.year == yr && r.month == m && (mu === 'ALL' || r.municipality === mu)).forEach(r => {
+                    local += Number(r.local_tourist||0);
+                    foreign += Number(r.foreign_tourist||0);
+                    overseas += Number(r.overseas_filipino||0);
+                });
+                const totalAEs = local + foreign + overseas;
+
+                let tm=0, om=0, fcr=0;
+                tassRecords.filter(r => r.year == yr && r.month == m && (mu === 'ALL' || r.municipality === mu)).forEach(r => {
+                    tm += Number(r.tm_sum||0);
+                    om += Number(r.om_sum||0);
+                    fcr += Number(r.fcr_sum||0);
+                });
+                const totalTAss = tm + om + fcr;
+                const combined = totalAEs + totalTAss;
+
+                gLocal+=local; gForeign+=foreign; gOverseas+=overseas; gAEsTotal+=totalAEs;
+                gTM+=tm; gOM+=om; gFCR+=fcr; gTAssTotal+=totalTAss;
+
+                tbody.innerHTML += `<tr class="hover:bg-slate-50 border-b">
+                    <td class="p-2 font-bold text-slate-800">${MONTH_NAMES[m-1]}</td>
+                    <td class="p-2 text-right">${local.toLocaleString()}</td>
+                    <td class="p-2 text-right">${foreign.toLocaleString()}</td>
+                    <td class="p-2 text-right">${overseas.toLocaleString()}</td>
+                    <td class="p-2 text-right font-bold bg-blue-50/50 text-blue-900">${totalAEs.toLocaleString()}</td>
+                    <td class="p-2 text-right">${tm.toLocaleString()}</td>
+                    <td class="p-2 text-right">${om.toLocaleString()}</td>
+                    <td class="p-2 text-right">${fcr.toLocaleString()}</td>
+                    <td class="p-2 text-right font-bold bg-teal-50/50 text-teal-900">${totalTAss.toLocaleString()}</td>
+                    <td class="p-2 text-right font-bold bg-amber-50 text-amber-900">${combined.toLocaleString()}</td>
+                </tr>`;
+            }
+
+            document.getElementById('rptMonthlyFoot').innerHTML = `<tr>
+                <td class="p-2">YEAR TOTAL (${yr})</td>
+                <td class="p-2 text-right">${gLocal.toLocaleString()}</td>
+                <td class="p-2 text-right">${gForeign.toLocaleString()}</td>
+                <td class="p-2 text-right">${gOverseas.toLocaleString()}</td>
+                <td class="p-2 text-right text-blue-200">${gAEsTotal.toLocaleString()}</td>
+                <td class="p-2 text-right">${gTM.toLocaleString()}</td>
+                <td class="p-2 text-right">${gOM.toLocaleString()}</td>
+                <td class="p-2 text-right">${gFCR.toLocaleString()}</td>
+                <td class="p-2 text-right text-teal-200">${gTAssTotal.toLocaleString()}</td>
+                <td class="p-2 text-right text-amber-300 font-extrabold">${(gAEsTotal + gTAssTotal).toLocaleString()}</td>
+            </tr>`;
+        }
+
+        /**
+         * SECTION 7: TOP 10 ACCOMMODATION ESTABLISHMENTS RANKINGS
+         */
+        function renderTopAEReport() {
+            const yr = document.getElementById('topAEYear').value || 2026;
+            const mo = document.getElementById('topAEMonth').value;
+            const mu = document.getElementById('topAEMuni').value;
+
+            // Group by Establishment
+            const estMap = {};
+            aeRecords.forEach(r => {
+                if (r.year != yr) return;
+                if (mo !== 'ALL' && r.month != mo) return;
+                if (mu !== 'ALL' && r.municipality !== mu) return;
+
+                const key = `${r.establishment}||${r.municipality}`;
+                if (!estMap[key]) {
+                    estMap[key] = { establishment: r.establishment, municipality: r.municipality, type: r.type_class || 'N/A', count: 0 };
+                }
+                estMap[key].count += Number(r.total_lf || 0);
+            });
+
+            const sorted = Object.values(estMap).sort((a,b) => b.count - a.count).slice(0, 10);
+            const tbody = document.getElementById('topAEBody');
+            tbody.innerHTML = '';
+
+            if (!sorted.length) {
+                tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-slate-400">No data found for selected period.</td></tr>`;
+            } else {
+                sorted.forEach((item, idx) => {
+                    const badgeClass = idx === 0 ? 'bg-amber-100 text-amber-800 font-bold' : (idx === 1 ? 'bg-slate-200 text-slate-700' : (idx === 2 ? 'bg-amber-700/20 text-amber-900' : 'bg-slate-100 text-slate-600'));
+                    tbody.innerHTML += `<tr class="hover:bg-slate-50 border-b">
+                        <td class="p-3 text-center"><span class="px-2 py-1 rounded-full text-xs ${badgeClass}">#${idx+1}</span></td>
+                        <td class="p-3 font-bold text-slate-800">${item.establishment}</td>
+                        <td class="p-3">${item.municipality}</td>
+                        <td class="p-3 text-slate-500">${item.type}</td>
+                        <td class="p-3 text-right font-extrabold text-teal-700 text-sm">${item.count.toLocaleString()}</td>
+                    </tr>`;
+                });
+            }
+
+            // Top AE Doughnut Chart
+            const ctx = document.getElementById('chartTopAE').getContext('2d');
+            if (chartTopAEObj) chartTopAEObj.destroy();
+            chartTopAEObj = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: sorted.map(x => x.establishment),
+                    datasets: [{
+                        data: sorted.map(x => x.count),
+                        backgroundColor: ['#0f766e', '#14b8a6', '#2dd4bf', '#38bdf8', '#60a5fa', '#818cf8', '#a78bfa', '#c084fc', '#f472b6', '#fb7185']
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+        }
+
+        /**
+         * SECTION 8: TOP 10 TOURIST ATTRACTIONS RANKINGS
+         */
+        function renderTopTAssReport() {
+            const yr = document.getElementById('topTAssYear').value || 2026;
+            const mo = document.getElementById('topTAssMonth').value;
+            const mu = document.getElementById('topTAssMuni').value;
+
+            const attrMap = {};
+            tassRecords.forEach(r => {
+                if (r.year != yr) return;
+                if (mo !== 'ALL' && r.month != mo) return;
+                if (mu !== 'ALL' && r.municipality !== mu) return;
+
+                const key = `${r.attraction}||${r.municipality}`;
+                if (!attrMap[key]) {
+                    attrMap[key] = { attraction: r.attraction, municipality: r.municipality, count: 0 };
+                }
+                attrMap[key].count += Number(r.grand_total || 0);
+            });
+
+            const sorted = Object.values(attrMap).sort((a,b) => b.count - a.count).slice(0, 10);
+            const tbody = document.getElementById('topTAssBody');
+            tbody.innerHTML = '';
+
+            if (!sorted.length) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-slate-400">No attraction data found for selected period.</td></tr>`;
+            } else {
+                sorted.forEach((item, idx) => {
+                    const badgeClass = idx === 0 ? 'bg-amber-100 text-amber-800 font-bold' : (idx === 1 ? 'bg-slate-200 text-slate-700' : (idx === 2 ? 'bg-amber-700/20 text-amber-900' : 'bg-slate-100 text-slate-600'));
+                    tbody.innerHTML += `<tr class="hover:bg-slate-50 border-b">
+                        <td class="p-3 text-center"><span class="px-2 py-1 rounded-full text-xs ${badgeClass}">#${idx+1}</span></td>
+                        <td class="p-3 font-bold text-slate-800">${item.attraction}</td>
+                        <td class="p-3">${item.municipality}</td>
+                        <td class="p-3 text-right font-extrabold text-teal-700 text-sm">${item.count.toLocaleString()}</td>
+                    </tr>`;
+                });
+            }
+
+            // Top TAss Pie Chart
+            const ctx = document.getElementById('chartTopTAss').getContext('2d');
+            if (chartTopTAssObj) chartTopTAssObj.destroy();
+            chartTopTAssObj = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: sorted.map(x => x.attraction),
+                    datasets: [{
+                        data: sorted.map(x => x.count),
+                        backgroundColor: ['#0d9488', '#06b6d4', '#0284c7', '#2563eb', '#4f46e5', '#7c3aed', '#9333ea', '#c026d3', '#db2777', '#e11d48']
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+        }
+
+        /**
+         * SECTION 9: EXCEL IMPORT/EXPORT AND AGENCY-READY REPORTS
+         */
+        const EXCEL_HEADER_FILL = "0F172A";
+        const EXCEL_HEADER_FONT = { bold: true, color: { rgb: "FFFFFF" } };
+        const EXCEL_TITLE_FONT = { bold: true, color: { rgb: "0F172A" }, sz: 14 };
+        const EXCEL_SUBTITLE_FONT = { italic: true, color: { rgb: "475569" } };
+
+        function excelHeaderStyle() {
+            return {
+                font: EXCEL_HEADER_FONT,
+                fill: { fgColor: { rgb: EXCEL_HEADER_FILL } },
+                alignment: { horizontal: "center", vertical: "center", wrapText: true },
+                border: { bottom: { style: "thin", color: { rgb: "CBD5E1" } } }
+            };
+        }
+
+        function excelTitleStyle() {
+            return { font: EXCEL_TITLE_FONT, alignment: { horizontal: "center", vertical: "center" } };
+        }
+
+        function excelNumberStyle() {
+            return { numFmt: '#,##0', alignment: { horizontal: "right" } };
+        }
+
+        function autoWidth(ws, min = 10, max = 32) {
+            const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+            const widths = [];
+            for (let c = range.s.c; c <= range.e.c; c++) {
+                let maxLen = min;
+                for (let r = range.s.r; r <= range.e.r; r++) {
+                    const cell = ws[XLSX.utils.encode_cell({ r, c })];
+                    if (cell && cell.v != null) maxLen = Math.max(maxLen, String(cell.v).length + 2);
+                }
+                widths.push({ wch: Math.min(Math.max(maxLen, min), max) });
+            }
+            ws['!cols'] = widths;
+        }
+
+        function styleHeaderRow(ws, rowNumber = 0) {
+            const range = XLSX.utils.decode_range(ws['!ref']);
+            for (let c = range.s.c; c <= range.e.c; c++) {
+                const cell = ws[XLSX.utils.encode_cell({ r: rowNumber, c })];
+                if (cell) cell.s = excelHeaderStyle();
+            }
+        }
+
+        function styleDataNumbers(ws, numericColumns, startRow = 1) {
+            const range = XLSX.utils.decode_range(ws['!ref']);
+            for (let r = startRow; r <= range.e.r; r++) {
+                numericColumns.forEach(c => {
+                    const cell = ws[XLSX.utils.encode_cell({ r, c })];
+                    if (cell && typeof cell.v === 'number') cell.s = excelNumberStyle();
+                });
+            }
+        }
+
+        function makeDataSheet(headers, rows, numericColumns = []) {
+            const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+            styleHeaderRow(ws, 0);
+            styleDataNumbers(ws, numericColumns, 1);
+            ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+            ws['!autofilter'] = { ref: ws['!ref'] };
+            autoWidth(ws);
+            return ws;
+        }
+
+        function saveWorkbook(workbook, fileName) {
+            XLSX.writeFile(workbook, fileName, { bookType: 'xlsx', compression: true });
+        }
+
+        function exportAEsExcel() {
+            if (!aeRecords.length) { showToast("No AE records to export.", "warning"); return; }
+            const headers = ["Province","Municipality","Year","Month","Accommodation Establishment","Type Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total (L+F+Overseas)","Total Male","Total Female","Total (M+F)"];
+            const rows = aeRecords.map(r => [
+                r.province, r.municipality, r.year, MONTH_NAMES[r.month-1], r.establishment, r.type_class || '',
+                Number(r.local_tourist||0), Number(r.foreign_tourist||0), Number(r.overseas_filipino||0),
+                Number(r.local_tourist||0)+Number(r.foreign_tourist||0)+Number(r.overseas_filipino||0),
+                Number(r.total_male||0), Number(r.total_female||0), Number(r.total_mf||0)
+            ]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers, rows, [2,6,7,8,9,10,11,12]), "AEs Data");
+            XLSX.utils.book_append_sheet(wb, makeInfoSheet("Tourist Arrivals – Accommodation Establishments (AEs)", "Provincial & Municipal Tourism Statistics Portal"), "Info");
+            saveWorkbook(wb, `Tourist_Arrivals_AEs_${new Date().toISOString().slice(0,10)}.xlsx`);
+        }
+
+        function exportTAssExcel() {
+            if (!tassRecords.length) { showToast("No TAss records to export.", "warning"); return; }
+            const headers = ["Province","Municipality","Year","Month","Tourist Attraction","TM(M)","TM(F)","TM(SUM)","OM(M)","OM(F)","OM(SUM)","FCR(M)","FCR(F)","FCR(SUM)","Total Male","Total Female","Grand Total"];
+            const rows = tassRecords.map(r => [
+                r.province, r.municipality, r.year, MONTH_NAMES[r.month-1], r.attraction,
+                Number(r.tm_m||0), Number(r.tm_f||0), Number(r.tm_sum||0),
+                Number(r.om_m||0), Number(r.om_f||0), Number(r.om_sum||0),
+                Number(r.fcr_m||0), Number(r.fcr_f||0), Number(r.fcr_sum||0),
+                Number(r.total_male||0), Number(r.total_female||0), Number(r.grand_total||0)
+            ]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers, rows, [2,5,6,7,8,9,10,11,12,13,14,15,16]), "TAss Data");
+            XLSX.utils.book_append_sheet(wb, makeInfoSheet("Same-Day Visitors – Tourist Attraction Arrivals (TAss)", "Provincial & Municipal Tourism Statistics Portal"), "Info");
+            saveWorkbook(wb, `SameDay_Visitors_TAss_${new Date().toISOString().slice(0,10)}.xlsx`);
+        }
+
+        function makeInfoSheet(title, subtitle) {
+            const ws = XLSX.utils.aoa_to_sheet([
+                [title],
+                [subtitle],
+                [`Generated: ${new Date().toLocaleString()}`],
+                ["This workbook is in Excel format for data management, review, and agency submission."]
+            ]);
+            ws['A1'].s = excelTitleStyle();
+            ws['A2'].s = EXCEL_SUBTITLE_FONT;
+            ws['!merges'] = [{ s: { r:0,c:0 }, e: { r:0,c:4 } }, { s: { r:1,c:0 }, e: { r:1,c:4 } }, { s: { r:3,c:0 }, e: { r:3,c:4 } }];
+            ws['!cols'] = [{ wch: 80 }];
+            return ws;
+        }
+
+        function exportBackupExcel() {
+            const wb = XLSX.utils.book_new();
+            const aeHeaders = ["ID","Province","Municipality","Year","Month","Accommodation Establishment","Type Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total (L+F+Overseas)","Total Male","Total Female","Total (M+F)"];
+            const aeRows = aeRecords.map(r => [r.id||'',r.province,r.municipality,r.year,MONTH_NAMES[r.month-1],r.establishment,r.type_class||'',Number(r.local_tourist||0),Number(r.foreign_tourist||0),Number(r.overseas_filipino||0),Number(r.total_lf||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.total_mf||0)]);
+            const taHeaders = ["ID","Province","Municipality","Year","Month","Tourist Attraction","TM(M)","TM(F)","TM(SUM)","OM(M)","OM(F)","OM(SUM)","FCR(M)","FCR(F)","FCR(SUM)","Total Male","Total Female","Grand Total"];
+            const taRows = tassRecords.map(r => [r.id||'',r.province,r.municipality,r.year,MONTH_NAMES[r.month-1],r.attraction,Number(r.tm_m||0),Number(r.tm_f||0),Number(r.tm_sum||0),Number(r.om_m||0),Number(r.om_f||0),Number(r.om_sum||0),Number(r.fcr_m||0),Number(r.fcr_f||0),Number(r.fcr_sum||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.grand_total||0)]);
+            XLSX.utils.book_append_sheet(wb, makeDataSheet(aeHeaders, aeRows, [0,3,7,8,9,10,11,12,13]), "AEs");
+            XLSX.utils.book_append_sheet(wb, makeDataSheet(taHeaders, taRows, [0,3,6,7,8,9,10,11,12,13,14,15,16,17]), "TAss");
+            XLSX.utils.book_append_sheet(wb, makeInfoSheet("Tourism Data Banking System – Full Database Backup", "Do not edit sheet names or column headers if this workbook will be restored."), "Backup Info");
+            saveWorkbook(wb, `TourismDB_Backup_${new Date().toISOString().slice(0,10)}.xlsx`);
+            showToast("Excel database backup downloaded successfully.", "success");
+        }
+
+        async function handleRestoreExcelFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            if (!confirm("WARNING: Restoring will REPLACE all existing database records. Do you wish to continue?")) return;
+
+            try {
+                const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+                if (!workbook.Sheets["AEs"] || !workbook.Sheets["TAss"]) throw new Error("Invalid backup workbook. Required sheets: AEs and TAss.");
+
+                const aeRows = XLSX.utils.sheet_to_json(workbook.Sheets["AEs"], { defval: "" });
+                const taRows = XLSX.utils.sheet_to_json(workbook.Sheets["TAss"], { defval: "" });
+
+                await clearStore("aes");
+                await clearStore("tass");
+
+                for (const r of aeRows) {
+                    const rec = {
+                        id: r.ID || undefined, province: r.Province || 'Occidental Mindoro', municipality: r.Municipality,
+                        year: Number(r.Year), month: monthToNumber(r.Month), establishment: r["Accommodation Establishment"],
+                        type_class: r["Type Class"] || 'General', local_tourist: Number(r["Local Tourist"]||0),
+                        foreign_tourist: Number(r["Foreign Tourist"]||0), overseas_filipino: Number(r["Overseas Filipino"]||0),
+                        total_lf: Number(r["Total (L+F+Overseas)"]||0), total_male: Number(r["Total Male"]||0),
+                        total_female: Number(r["Total Female"]||0), total_mf: Number(r["Total (M+F)"]||0)
+                    };
+                    if (rec.id === undefined || rec.id === "") delete rec.id;
+                    await putRecordToStore("aes", rec);
+                }
+
+                for (const r of taRows) {
+                    const rec = {
+                        id: r.ID || undefined, province: r.Province || 'Occidental Mindoro', municipality: r.Municipality,
+                        year: Number(r.Year), month: monthToNumber(r.Month), attraction: r["Tourist Attraction"],
+                        tm_m: Number(r["TM(M)"]||0), tm_f: Number(r["TM(F)"]||0), tm_sum: Number(r["TM(SUM)"]||0),
+                        om_m: Number(r["OM(M)"]||0), om_f: Number(r["OM(F)"]||0), om_sum: Number(r["OM(SUM)"]||0),
+                        fcr_m: Number(r["FCR(M)"]||0), fcr_f: Number(r["FCR(F)"]||0), fcr_sum: Number(r["FCR(SUM)"]||0),
+                        total_male: Number(r["Total Male"]||0), total_female: Number(r["Total Female"]||0), grand_total: Number(r["Grand Total"]||0)
+                    };
+                    if (rec.id === undefined || rec.id === "") delete rec.id;
+                    await putRecordToStore("tass", rec);
+                }
+
+                await loadAllRecords();
+                refreshAllViews();
+                showToast("Database successfully restored from Excel!", "success");
+            } catch (err) {
+                showToast("Failed to restore database: " + err.message, "danger");
+            } finally {
+                event.target.value = "";
+            }
+        }
+
+        function monthToNumber(month) {
+            if (typeof month === 'number') return month;
+            const value = String(month || '').trim();
+            const n = parseInt(value);
+            if (!isNaN(n)) return n;
+            const idx = MONTH_NAMES.findIndex(m => m.toLowerCase() === value.toLowerCase());
+            return idx >= 0 ? idx + 1 : 0;
+        }
+
+        function downloadAETemplate() {
+            const headers = ["Province","Municipality","Year","Month","Accommodation Establishment","Type Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total Male","Total Female"];
+            const sample = ["Occidental Mindoro","Mamburao",2026,"January","Sample Establishment","Hotel",0,0,0,0,0];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers,[sample],[2,6,7,8,9,10]),"AEs Data");
+            XLSX.utils.book_append_sheet(wb, makeInfoSheet("AEs Excel Upload Template","Enter one record per row. Total columns are calculated by the system; do not enter formulas for totals."),"Instructions");
+            saveWorkbook(wb, "Tourism_AEs_Excel_Upload_Template.xlsx");
+        }
+
+        function downloadTAssTemplate() {
+            const headers = ["Province","Municipality","Year","Month","Tourist Attraction","TM(M)","TM(F)","OM(M)","OM(F)","FCR(M)","FCR(F)"];
+            const sample = ["Occidental Mindoro","Mamburao",2026,"January","Sample Attraction",0,0,0,0,0,0];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers,[sample],[2,5,6,7,8,9,10]),"TAss Data");
+            XLSX.utils.book_append_sheet(wb, makeInfoSheet("TAss Excel Upload Template","Enter one record per row. SUM and total columns are calculated by the system; do not enter formulas for totals."),"Instructions");
+            saveWorkbook(wb, "Tourism_TAss_Excel_Upload_Template.xlsx");
+        }
+
+        function getAnnualReportRows(yr) {
+            const munis = new Set();
+            aeRecords.forEach(r => { if (r.year == yr) munis.add(r.municipality); });
+            tassRecords.forEach(r => { if (r.year == yr) munis.add(r.municipality); });
+            const sortedMunis = Array.from(munis).sort();
+            const rows = [];
+            let gLocal=0,gForeign=0,gOverseas=0,gAEsTotal=0,gTM=0,gOM=0,gFCR=0,gTAssTotal=0;
+            sortedMunis.forEach(m => {
+                let local=0,foreign=0,overseas=0;
+                aeRecords.filter(r=>r.year==yr&&r.municipality===m).forEach(r=>{local+=Number(r.local_tourist||0);foreign+=Number(r.foreign_tourist||0);overseas+=Number(r.overseas_filipino||0);});
+                const totalAEs=local+foreign+overseas;
+                let tm=0,om=0,fcr=0;
+                tassRecords.filter(r=>r.year==yr&&r.municipality===m).forEach(r=>{tm+=Number(r.tm_sum||0);om+=Number(r.om_sum||0);fcr+=Number(r.fcr_sum||0);});
+                const totalTAss=tm+om+fcr, combined=totalAEs+totalTAss;
+                gLocal+=local;gForeign+=foreign;gOverseas+=overseas;gAEsTotal+=totalAEs;gTM+=tm;gOM+=om;gFCR+=fcr;gTAssTotal+=totalTAss;
+                rows.push([m,local,foreign,overseas,totalAEs,tm,om,fcr,totalTAss,combined]);
+            });
+            rows.push(["PROVINCIAL TOTAL",gLocal,gForeign,gOverseas,gAEsTotal,gTM,gOM,gFCR,gTAssTotal,gAEsTotal+gTAssTotal]);
+            return rows;
+        }
+
+        function exportAnnualReportExcel() {
+            const yr = document.getElementById('rptAnnualYear').value || 2026;
+            const rows = getAnnualReportRows(yr);
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet([
+                ["PROVINCIAL GOVERNMENT OF OCCIDENTAL MINDORO"],
+                ["ANNUAL TOURISM PERFORMANCE SUMMARY"],
+                [`Reporting Year: ${yr}`],
+                ["Municipality","Local","Foreign","Overseas","Total AEs","TM","OM","FCR","Total TAss","Combined Visitors"],
+                ...rows
+            ]);
+            ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:9}},{s:{r:1,c:0},e:{r:1,c:9}},{s:{r:2,c:0},e:{r:2,c:9}}];
+            ws['A1'].s=excelTitleStyle(); ws['A2'].s=excelTitleStyle(); ws['A3'].s=EXCEL_SUBTITLE_FONT;
+            styleHeaderRow(ws,3); styleDataNumbers(ws,[1,2,3,4,5,6,7,8,9],4);
+            ws['!freeze']={xSplit:0,ySplit:4}; autoWidth(ws,12,30);
+            XLSX.utils.book_append_sheet(wb,ws,"Annual Summary");
+            saveWorkbook(wb,`Annual_Tourism_Summary_${yr}.xlsx`);
+        }
+
+        function getMonthlyReportRows(yr, mu) {
+            const rows=[];
+            let gLocal=0,gForeign=0,gOverseas=0,gAEsTotal=0,gTM=0,gOM=0,gFCR=0,gTAssTotal=0;
+            for(let m=1;m<=12;m++){
+                let local=0,foreign=0,overseas=0;
+                aeRecords.filter(r=>r.year==yr&&r.month==m&&(mu==='ALL'||r.municipality===mu)).forEach(r=>{local+=Number(r.local_tourist||0);foreign+=Number(r.foreign_tourist||0);overseas+=Number(r.overseas_filipino||0);});
+                const totalAEs=local+foreign+overseas;
+                let tm=0,om=0,fcr=0;
+                tassRecords.filter(r=>r.year==yr&&r.month==m&&(mu==='ALL'||r.municipality===mu)).forEach(r=>{tm+=Number(r.tm_sum||0);om+=Number(r.om_sum||0);fcr+=Number(r.fcr_sum||0);});
+                const totalTAss=tm+om+fcr,combined=totalAEs+totalTAss;
+                gLocal+=local;gForeign+=foreign;gOverseas+=overseas;gAEsTotal+=totalAEs;gTM+=tm;gOM+=om;gFCR+=fcr;gTAssTotal+=totalTAss;
+                rows.push([MONTH_NAMES[m-1],local,foreign,overseas,totalAEs,tm,om,fcr,totalTAss,combined]);
+            }
+            rows.push([`YEAR TOTAL (${yr})`,gLocal,gForeign,gOverseas,gAEsTotal,gTM,gOM,gFCR,gTAssTotal,gAEsTotal+gTAssTotal]);
+            return rows;
+        }
+
+        function exportMonthlyReportExcel() {
+            const yr=document.getElementById('rptMonthlyYear').value||2026;
+            const mu=document.getElementById('rptMonthlyMuni').value;
+            const scope=mu==='ALL'?'All Municipalities':mu;
+            const wb=XLSX.utils.book_new();
+            const ws=XLSX.utils.aoa_to_sheet([
+                ["PROVINCIAL GOVERNMENT OF OCCIDENTAL MINDORO"],
+                ["MONTHLY VISITOR BREAKDOWN REPORT"],
+                [`Year: ${yr} | Scope: ${scope}`],
+                ["Month","Local Tourist","Foreign Tourist","Overseas Fil","Total Tourist Arrivals","Same-Day (TM)","Same-Day (OM)","Same-Day (FCR)","Total Same-Day","Combined Visitors"],
+                ...getMonthlyReportRows(yr,mu)
+            ]);
+            ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:9}},{s:{r:1,c:0},e:{r:1,c:9}},{s:{r:2,c:0},e:{r:2,c:9}}];
+            ws['A1'].s=excelTitleStyle();ws['A2'].s=excelTitleStyle();ws['A3'].s=EXCEL_SUBTITLE_FONT;
+            styleHeaderRow(ws,3);styleDataNumbers(ws,[1,2,3,4,5,6,7,8,9],4);ws['!freeze']={xSplit:0,ySplit:4};autoWidth(ws,12,30);
+            XLSX.utils.book_append_sheet(wb,ws,"Monthly Summary");
+            saveWorkbook(wb,`Monthly_Tourism_Summary_${yr}_${scope.replace(/[^A-Za-z0-9]+/g,'_')}.xlsx`);
+        }
+
+        function getTopAERows() {
+            const yr=document.getElementById('topAEYear').value||2026,mo=document.getElementById('topAEMonth').value,mu=document.getElementById('topAEMuni').value;
+            const estMap={};
+            aeRecords.forEach(r=>{
+                if(r.year!=yr)return;if(mo!=='ALL'&&r.month!=mo)return;if(mu!=='ALL'&&r.municipality!==mu)return;
+                const key=`${r.establishment}||${r.municipality}`;
+                if(!estMap[key])estMap[key]={establishment:r.establishment,municipality:r.municipality,type:r.type_class||'N/A',count:0};
+                estMap[key].count+=Number(r.total_lf||0);
+            });
+            return Object.values(estMap).sort((a,b)=>b.count-a.count).slice(0,10);
+        }
+
+        function exportTopAEExcel() {
+            const yr=document.getElementById('topAEYear').value||2026,mo=document.getElementById('topAEMonth').value,mu=document.getElementById('topAEMuni').value;
+            const wb=XLSX.utils.book_new();
+            const rows=getTopAERows().map((x,i)=>[i+1,x.establishment,x.municipality,x.type,x.count]);
+            const ws=XLSX.utils.aoa_to_sheet([["PROVINCIAL GOVERNMENT OF OCCIDENTAL MINDORO"],["TOP 10 ACCOMMODATION ESTABLISHMENTS"],[`Year: ${yr} | Month: ${mo==='ALL'?'Entire Year':MONTH_NAMES[mo-1]} | Scope: ${mu==='ALL'?'All Municipalities':mu}`],["Rank","Accommodation Establishment","Municipality","Type / Class","Tourist Arrivals"],...rows]);
+            ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:4}},{s:{r:1,c:0},e:{r:1,c:4}},{s:{r:2,c:0},e:{r:2,c:4}}];ws['A1'].s=excelTitleStyle();ws['A2'].s=excelTitleStyle();ws['A3'].s=EXCEL_SUBTITLE_FONT;styleHeaderRow(ws,3);styleDataNumbers(ws,[0,4],4);ws['!freeze']={xSplit:0,ySplit:4};autoWidth(ws,12,35);XLSX.utils.book_append_sheet(wb,ws,"Top 10 AEs");saveWorkbook(wb,`Top10_Accommodation_Establishments_${yr}.xlsx`);
+        }
+
+        function getTopTAssRows() {
+            const yr=document.getElementById('topTAssYear').value||2026,mo=document.getElementById('topTAssMonth').value,mu=document.getElementById('topTAssMuni').value;
+            const map={};
+            tassRecords.forEach(r=>{
+                if(r.year!=yr)return;if(mo!=='ALL'&&r.month!=mo)return;if(mu!=='ALL'&&r.municipality!==mu)return;
+                const key=`${r.attraction}||${r.municipality}`;
+                if(!map[key])map[key]={attraction:r.attraction,municipality:r.municipality,count:0};
+                map[key].count+=Number(r.grand_total||0);
+            });
+            return Object.values(map).sort((a,b)=>b.count-a.count).slice(0,10);
+        }
+
+        function exportTopTAssExcel() {
+            const yr=document.getElementById('topTAssYear').value||2026,mo=document.getElementById('topTAssMonth').value,mu=document.getElementById('topTAssMuni').value;
+            const wb=XLSX.utils.book_new();
+            const rows=getTopTAssRows().map((x,i)=>[i+1,x.attraction,x.municipality,x.count]);
+            const ws=XLSX.utils.aoa_to_sheet([["PROVINCIAL GOVERNMENT OF OCCIDENTAL MINDORO"],["TOP 10 TOURIST ATTRACTIONS"],[`Year: ${yr} | Month: ${mo==='ALL'?'Entire Year':MONTH_NAMES[mo-1]} | Scope: ${mu==='ALL'?'All Municipalities':mu}`],["Rank","Tourist Attraction","Municipality","Same-Day Visitors"],...rows]);
+            ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:1,c:0},e:{r:1,c:3}},{s:{r:2,c:0},e:{r:2,c:3}}];ws['A1'].s=excelTitleStyle();ws['A2'].s=excelTitleStyle();ws['A3'].s=EXCEL_SUBTITLE_FONT;styleHeaderRow(ws,3);styleDataNumbers(ws,[0,3],4);ws['!freeze']={xSplit:0,ySplit:4};autoWidth(ws,12,35);XLSX.utils.book_append_sheet(wb,ws,"Top 10 TAss");saveWorkbook(wb,`Top10_Tourist_Attractions_${yr}.xlsx`);
+        }
+
+        /**
+         * UTILITY DIALOG & TOAST UI HELPERS
+         */
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.remove('hidden');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+        }
+
+        function downloadFile(content, fileName, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function showToast(message, type = "info") {
+            const toastContainer = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            const bgClass = type === 'success' ? 'bg-emerald-800 border-emerald-600' : (type === 'danger' ? 'bg-rose-800 border-rose-600' : (type === 'warning' ? 'bg-amber-800 border-amber-600' : 'bg-navy-800 border-teal-600'));
+            
+            toast.className = `${bgClass} text-white text-xs px-4 py-3 rounded-lg shadow-xl border flex items-center justify-between space-x-3 pointer-events-auto transition-all transform translate-y-2 opacity-0`;
+            toast.innerHTML = `<span>${message}</span><button onclick="this.parentElement.remove()" class="text-slate-300 hover:text-white">&times;</button>`;
+
+            toastContainer.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+    </script>
+</body>
+</html>
