@@ -43,8 +43,7 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
     import {
-      initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-      collection, getDocs, doc, setDoc, deleteDoc, writeBatch
+      getFirestore, collection, getDocs, doc, setDoc, deleteDoc, writeBatch
     } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
@@ -59,13 +58,7 @@
 
     const app = initializeApp(firebaseConfig);
     const analytics = getAnalytics(app);
-
-    // Persistent local cache: getDocs() now answers instantly from disk on refresh and
-    // only pulls what actually changed from the server, instead of re-downloading both
-    // collections over the network every single page load.
-    const cloudDB = initializeFirestore(app, {
-      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-    });
+    const cloudDB = getFirestore(app);
 
     window.cloudDB = cloudDB;
     window.cloudFns = { collection, getDocs, doc, setDoc, deleteDoc, writeBatch };
@@ -983,15 +976,11 @@
         window.onload = function() {
             initIndexedDB().then(async () => {
                 await loadAllRecords();
-                // Paint whatever is already cached locally BEFORE waiting on the network.
-                // Previously the whole UI sat empty until the Firestore round trip finished.
-                refreshAllViews();
-
                 const cloudLoaded = await loadAllFromCloud();
                 const alreadySeeded = localStorage.getItem('toaks_data_seeded') === 'true';
                 if (!cloudLoaded && aeRecords.length === 0 && tassRecords.length === 0 && !alreadySeeded) {
                     await preloadSampleData();
-                } else if (cloudLoaded) {
+                } else {
                     refreshAllViews();
                 }
             }).catch(err => {
@@ -1150,21 +1139,13 @@
                 if (cloudAEs.length || cloudTAss.length) {
                     await clearStore("aes");
                     await clearStore("tass");
-                    // ONE transaction per store instead of one per record. Re-inserting a few
-                    // thousand rows with an awaited put() each meant a few thousand separate
-                    // disk flushes, which was the main reason startup dragged.
-                    await putRecordsToStore("aes", cloudAEs);
-                    await putRecordsToStore("tass", cloudTAss);
+                    for (const r of cloudAEs) await putRecordToStore("aes", r);
+                    for (const r of cloudTAss) await putRecordToStore("tass", r);
                     await loadAllRecords();
-                    // Cloud and local now match, so nothing needs re-uploading.
-                    setCloudHashes(buildHashMapFromRecords());
                     updateCloudStatus("Cloud Synced");
                     showToast(`Cloud data loaded: ${cloudAEs.length + cloudTAss.length} records.`, "success");
                     return true;
                 }
-                // Cloud is empty (or was wiped): forget what we think is already up there so
-                // the next Save to Cloud performs a full re-upload rather than skipping rows.
-                setCloudHashes({});
                 updateCloudStatus("Cloud Empty");
                 return false;
             } catch (err) {
@@ -1237,89 +1218,20 @@
                 if (!window.cloudDB || !window.cloudFns || !records.length) return;
                 const { collection, doc, writeBatch } = window.cloudFns;
                 const name = type === "aes" ? "tourism_ae_records" : "tourism_tass_records";
-
-                // Previously each 450-doc batch was committed one after another, so the upload
-                // took (number of batches x one full network round trip). Committing a few in
-                // parallel overlaps those round trips; the badge shows live progress so it is
-                // obvious the work is happening in the background and not frozen.
-                const chunks = [];
-                for (let i = 0; i < records.length; i += 450) chunks.push(records.slice(i, i + 450));
-
-                let done = 0;
-                console.time(`cloud push ${type} (${records.length} records)`);
-                const tasks = chunks.map(chunk => async () => {
+                for (let i = 0; i < records.length; i += 450) {
                     const batch = writeBatch(window.cloudDB);
-                    chunk.forEach(r => {
+                    records.slice(i, i + 450).forEach(r => {
                         batch.set(doc(collection(window.cloudDB, name), cloudDocId(type, r)), {
                             ...r, localId: r.id ?? null, cloudUpdatedAt: new Date().toISOString()
                         });
                     });
                     await batch.commit();
-                    done += chunk.length;
-                    updateCloudStatus(`Uploading ${done}/${records.length}`);
-                });
-                await runWithLimit(tasks, 4);
-                console.timeEnd(`cloud push ${type} (${records.length} records)`);
-
-                // These rows now match what is in Firestore, so a later "Save to Cloud" skips them.
-                const hashes = getCloudHashes();
-                records.forEach(r => { hashes[type + ":" + cloudDocId(type, r)] = recordFingerprint(r); });
-                setCloudHashes(hashes);
+                }
                 updateCloudStatus("Cloud Saved");
             } catch (err) {
                 console.warn("Bulk cloud push failed:", err);
                 showToast("Records saved locally, but cloud sync failed: " + (err.message || err.name), "warning");
             }
-        }
-
-        /**
-         * CHANGE TRACKING FOR CLOUD SAVES
-         * We keep a fingerprint of every record as it was last written to Firestore. On the
-         * next save we only upload rows whose fingerprint changed, so clicking "Save to Cloud"
-         * costs a handful of writes instead of re-uploading the entire dataset every time.
-         */
-        const CLOUD_HASH_KEY = 'toaks_cloud_hashes';
-
-        function recordFingerprint(r) {
-            // Deterministic, and deliberately excludes volatile/local-only fields so an
-            // unchanged record always produces the same string.
-            const clean = {};
-            Object.keys(r).sort().forEach(k => {
-                if (k === 'id' || k === 'localId' || k === 'cloudUpdatedAt') return;
-                clean[k] = r[k];
-            });
-            return JSON.stringify(clean);
-        }
-
-        function getCloudHashes() {
-            try { return JSON.parse(localStorage.getItem(CLOUD_HASH_KEY) || '{}'); }
-            catch { return {}; }
-        }
-
-        function setCloudHashes(map) {
-            try { localStorage.setItem(CLOUD_HASH_KEY, JSON.stringify(map)); }
-            catch (e) { console.warn("Could not persist cloud hash map:", e); }
-        }
-
-        function buildHashMapFromRecords() {
-            const map = {};
-            aeRecords.forEach(r => { map["aes:" + cloudDocId("aes", r)] = recordFingerprint(r); });
-            tassRecords.forEach(r => { map["tass:" + cloudDocId("tass", r)] = recordFingerprint(r); });
-            return map;
-        }
-
-        // Runs promise-producing tasks with a ceiling on how many are in flight at once.
-        // Firing every batch commit simultaneously makes Firestore throttle the connection,
-        // which ends up slower than a steady handful of parallel commits.
-        async function runWithLimit(tasks, limit) {
-            let index = 0;
-            const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
-                while (index < tasks.length) {
-                    const current = tasks[index++];
-                    await current();
-                }
-            });
-            await Promise.all(workers);
         }
 
         async function saveAllToCloud() {
@@ -1331,25 +1243,16 @@
                 const { collection, doc, writeBatch } = window.cloudFns;
                 const ops = [];
 
-                const knownHashes = getCloudHashes();
-                const nextHashes = {};
-                let skipped = 0;
-
-                const queueSet = (type, collectionName, r) => {
-                    const cloudId = cloudDocId(type, r);
-                    const key = type + ":" + cloudId;
-                    const fingerprint = recordFingerprint(r);
-                    nextHashes[key] = fingerprint;
-                    if (knownHashes[key] === fingerprint) { skipped++; return; }
-                    ops.push({
-                        type: 'set',
-                        ref: doc(collection(window.cloudDB, collectionName), cloudId),
-                        data: { ...r, localId: r.id ?? null, cloudUpdatedAt: new Date().toISOString() }
-                    });
-                };
-
-                aeRecords.forEach(r => queueSet("aes", "tourism_ae_records", r));
-                tassRecords.forEach(r => queueSet("tass", "tourism_tass_records", r));
+                aeRecords.forEach(r => ops.push({
+                    type: 'set',
+                    ref: doc(collection(window.cloudDB, "tourism_ae_records"), cloudDocId("aes", r)),
+                    data: { ...r, localId: r.id ?? null, cloudUpdatedAt: new Date().toISOString() }
+                }));
+                tassRecords.forEach(r => ops.push({
+                    type: 'set',
+                    ref: doc(collection(window.cloudDB, "tourism_tass_records"), cloudDocId("tass", r)),
+                    data: { ...r, localId: r.id ?? null, cloudUpdatedAt: new Date().toISOString() }
+                }));
 
                 // Clean up any deletes that failed to reach the cloud earlier — targeted deletes
                 // of just those specific doc IDs, not a full-collection scan.
@@ -1361,23 +1264,15 @@
 
                 const chunks = [];
                 for (let i = 0; i < ops.length; i += 450) chunks.push(ops.slice(i, i + 450));
-                const tasks = chunks.map(chunk => () => {
+                await Promise.all(chunks.map(chunk => {
                     const batch = writeBatch(window.cloudDB);
                     chunk.forEach(op => op.type === 'delete' ? batch.delete(op.ref) : batch.set(op.ref, op.data));
                     return batch.commit();
-                });
-                await runWithLimit(tasks, 4);
+                }));
 
                 clearPendingCloudDeletes(pendingDeletes);
-                setCloudHashes(nextHashes);
                 updateCloudStatus("Cloud Saved");
-                const written = ops.length - pendingDeletes.length;
-                showToast(
-                    written === 0 && !pendingDeletes.length
-                        ? "Cloud already up to date — nothing to upload."
-                        : `Cloud save complete: ${written} record(s) uploaded${skipped ? `, ${skipped} unchanged skipped` : ''}${pendingDeletes.length ? `, ${pendingDeletes.length} pending deletion(s) cleaned up` : ''}.`,
-                    "success"
-                );
+                showToast(`Cloud save complete: ${ops.length - pendingDeletes.length} records saved${pendingDeletes.length ? `, ${pendingDeletes.length} pending deletion(s) cleaned up` : ''}.`, "success");
             } catch (err) {
                 console.error("Cloud save failed:", err);
                 const msg = err.code === "permission-denied"
@@ -1658,43 +1553,6 @@
         }
 
         /**
-         * TABLE PAGINATION
-         * Both record tables previously built one <tr> for EVERY matching record. With a few
-         * thousand rows that is tens of thousands of DOM nodes plus inline handlers, rebuilt
-         * from scratch on every import, filter change and cloud sync — which is what makes
-         * the app appear to hang right after a bulk upload. We now render one page at a time.
-         */
-        const TABLE_PAGE_SIZE = 200;
-        const tablePageState = { ae: { page: 1, sig: '' }, tass: { page: 1, sig: '' } };
-
-        // Jump back to page 1 whenever the active filters change, and never leave the user
-        // stranded on a page that no longer exists after rows were removed.
-        function resolvePage(key, sig, totalRows) {
-            const st = tablePageState[key];
-            if (st.sig !== sig) { st.sig = sig; st.page = 1; }
-            const pages = Math.max(1, Math.ceil(totalRows / TABLE_PAGE_SIZE));
-            if (st.page > pages) st.page = pages;
-            return { page: st.page, pages };
-        }
-
-        function gotoTablePage(key, page) {
-            tablePageState[key].page = page;
-            if (key === 'ae') renderAETable(); else renderTAssTable();
-        }
-        window.gotoTablePage = gotoTablePage;
-
-        function renderPaginationControls(containerId, key, page, pages) {
-            const el = document.getElementById(containerId);
-            if (!el) return;
-            if (pages <= 1) { el.innerHTML = ''; return; }
-            const btn = (label, target, disabled) => `<button ${disabled ? 'disabled' : `onclick="gotoTablePage('${key}',${target})"`} class="px-2 py-1 rounded border ${disabled ? 'text-slate-300 border-slate-200 cursor-not-allowed' : 'text-slate-600 border-slate-300 hover:bg-white'}">${label}</button>`;
-            el.innerHTML =
-                btn('&laquo; Prev', page - 1, page <= 1) +
-                `<span class="px-2 font-semibold text-slate-600">Page ${page} of ${pages}</span>` +
-                btn('Next &raquo;', page + 1, page >= pages);
-        }
-
-        /**
          * SECTION 2: TOURIST ARRIVALS (AEs) TABLE & CRUD
          */
         function renderAETable() {
@@ -1716,22 +1574,16 @@
                 return true;
             });
 
+            document.getElementById('aeRecordCount').innerText = filtered.length;
             const tbody = document.getElementById('aeTableBody');
 
             if (filtered.length === 0) {
-                document.getElementById('aeRecordCount').innerText = 0;
-                renderPaginationControls('aePagination', 'ae', 1, 1);
                 tbody.innerHTML = `<tr><td colspan="11" class="p-6 text-center text-slate-400">No Accommodation Establishment records found.</td></tr>`;
                 return;
             }
 
-            const { page, pages } = resolvePage('ae', [muni, year, month, type, search].join('|'), filtered.length);
-            const pageRows = filtered.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE);
-            document.getElementById('aeRecordCount').innerText = `${pageRows.length} of ${filtered.length}`;
-            renderPaginationControls('aePagination', 'ae', page, pages);
-
             let html = '';
-            pageRows.forEach(r => {
+            filtered.forEach(r => {
                 const totalLF = Number(r.local_tourist||0) + Number(r.foreign_tourist||0) + Number(r.overseas_filipino||0);
                 const totalMF = Number(r.total_male||0) + Number(r.total_female||0);
 
@@ -1892,22 +1744,16 @@
                 return true;
             });
 
+            document.getElementById('tassRecordCount').innerText = filtered.length;
             const tbody = document.getElementById('tassTableBody');
 
             if (filtered.length === 0) {
-                document.getElementById('tassRecordCount').innerText = 0;
-                renderPaginationControls('tassPagination', 'tass', 1, 1);
                 tbody.innerHTML = `<tr><td colspan="10" class="p-6 text-center text-slate-400">No Same-Day Visitor records found.</td></tr>`;
                 return;
             }
 
-            const { page, pages } = resolvePage('tass', [muni, year, month, search].join('|'), filtered.length);
-            const pageRows = filtered.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE);
-            document.getElementById('tassRecordCount').innerText = `${pageRows.length} of ${filtered.length}`;
-            renderPaginationControls('tassPagination', 'tass', page, pages);
-
             let html = '';
-            pageRows.forEach(r => {
+            filtered.forEach(r => {
                 html += `<tr class="hover:bg-slate-50 border-b">
                     <td class="p-3"><div class="font-bold text-slate-800">${r.municipality}</div><div class="text-[10px] text-slate-400">${r.province}</div></td>
                     <td class="p-3"><div>${MONTH_NAMES[r.month - 1] || r.month}</div><div class="text-[10px] text-slate-400">${r.year}</div></td>
@@ -2245,18 +2091,12 @@
                     if (item.isUpdate && item.existingId) item.record.id = item.existingId;
                     return item.record;
                 });
-                console.time("AE import: write to IndexedDB");
                 await putRecordsToStore("aes", records);
-                console.timeEnd("AE import: write to IndexedDB");
                 pendingBulkAE = [];
-                console.time("AE import: reload records");
                 await loadAllRecords();
-                console.timeEnd("AE import: reload records");
                 pushRecordsToCloud("aes", records); // fire-and-forget: local import is already done, don't make the user wait on cloud sync
                 closeModal('modalBulkAE');
-                console.time("AE import: refresh UI");
                 refreshAllViews();
-                console.timeEnd("AE import: refresh UI");
                 showToast(`Bulk Import Complete! Added/Updated ${importCount} AE records.`, "success");
             } catch (err) {
                 console.error("Bulk AE import failed:", err);
@@ -2409,18 +2249,12 @@
                     if (item.isUpdate && item.existingId) item.record.id = item.existingId;
                     return item.record;
                 });
-                console.time("TAss import: write to IndexedDB");
                 await putRecordsToStore("tass", records);
-                console.timeEnd("TAss import: write to IndexedDB");
                 pendingBulkTAss = [];
-                console.time("TAss import: reload records");
                 await loadAllRecords();
-                console.timeEnd("TAss import: reload records");
                 pushRecordsToCloud("tass", records); // fire-and-forget: local import is already done, don't make the user wait on cloud sync
                 closeModal('modalBulkTAss');
-                console.time("TAss import: refresh UI");
                 refreshAllViews();
-                console.timeEnd("TAss import: refresh UI");
                 showToast(`Bulk Import Complete! Added/Updated ${importCount} TAss records.`, "success");
             } catch (err) {
                 console.error("Bulk TAss import failed:", err);
