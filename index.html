@@ -977,7 +977,8 @@
             initIndexedDB().then(async () => {
                 await loadAllRecords();
                 const cloudLoaded = await loadAllFromCloud();
-                if (!cloudLoaded && aeRecords.length === 0 && tassRecords.length === 0) {
+                const alreadySeeded = localStorage.getItem('toaks_data_seeded') === 'true';
+                if (!cloudLoaded && aeRecords.length === 0 && tassRecords.length === 0 && !alreadySeeded) {
                     await preloadSampleData();
                 } else {
                     refreshAllViews();
@@ -1220,6 +1221,7 @@
          * DEMO SAMPLE DATA INITIALIZATION
          */
         async function preloadSampleData() {
+            localStorage.setItem('toaks_data_seeded', 'true');
             const sampleAEs = [
                 { province: "Occidental Mindoro", municipality: "Mamburao", year: 2026, month: 1, establishment: "Beach Haven Resort", type_class: "Resort", local_tourist: 450, foreign_tourist: 60, overseas_filipino: 15, total_lf: 525, total_male: 260, total_female: 265, total_mf: 525 },
                 { province: "Occidental Mindoro", municipality: "Mamburao", year: 2026, month: 2, establishment: "Beach Haven Resort", type_class: "Resort", local_tourist: 510, foreign_tourist: 85, overseas_filipino: 20, total_lf: 615, total_male: 310, total_female: 305, total_mf: 615 },
