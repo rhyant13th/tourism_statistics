@@ -958,6 +958,18 @@
         let chartTopAEObj = null;
         let chartTopTAssObj = null;
 
+        // Global safety net: surface any unexpected error as a toast instead of letting a
+        // button click silently do nothing. This mainly catches IndexedDB unique-constraint
+        // errors (e.g. duplicate Province+Municipality+Year+Month+Establishment/Attraction)
+        // that otherwise fail as an unhandled promise rejection with no visible feedback.
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error("Unhandled error:", event.reason);
+            const msg = (event.reason && (event.reason.message || event.reason.name)) || String(event.reason);
+            if (typeof showToast === 'function') {
+                showToast("Something went wrong: " + msg, "danger");
+            }
+        });
+
         /**
          * INITIALIZATION & INDEXEDDB STORAGE SETUP
          */
@@ -1572,12 +1584,21 @@
                 record.id = Number(id);
             }
 
-            await putRecordToStore("aes", record);
-            await loadAllRecords();
-            await saveSingleToCloud("aes", record);
-            closeModal('modalAE');
-            refreshAllViews();
-            showToast("Accommodation Establishment record saved successfully.", "success");
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            try {
+                if (submitBtn) { submitBtn.disabled = true; submitBtn.innerText = 'Saving...'; }
+                await putRecordToStore("aes", record);
+                await loadAllRecords();
+                await saveSingleToCloud("aes", record);
+                closeModal('modalAE');
+                refreshAllViews();
+                showToast("Accommodation Establishment record saved successfully.", "success");
+            } catch (err) {
+                console.error("Save AE record failed:", err);
+                showToast("Failed to save record: " + (err.message || err.name || "Unknown error") + ". This usually means a record with the same Province/Municipality/Year/Month/Establishment already exists.", "danger");
+            } finally {
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.innerText = 'Save Record'; }
+            }
         }
 
         function editAERecord(id) {
@@ -1746,12 +1767,21 @@
                 record.id = Number(id);
             }
 
-            await putRecordToStore("tass", record);
-            await loadAllRecords();
-            await saveSingleToCloud("tass", record);
-            closeModal('modalTAss');
-            refreshAllViews();
-            showToast("Same-Day Visitor record saved successfully.", "success");
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            try {
+                if (submitBtn) { submitBtn.disabled = true; submitBtn.innerText = 'Saving...'; }
+                await putRecordToStore("tass", record);
+                await loadAllRecords();
+                await saveSingleToCloud("tass", record);
+                closeModal('modalTAss');
+                refreshAllViews();
+                showToast("Same-Day Visitor record saved successfully.", "success");
+            } catch (err) {
+                console.error("Save TAss record failed:", err);
+                showToast("Failed to save record: " + (err.message || err.name || "Unknown error") + ". This usually means a record with the same Province/Municipality/Year/Month/Attraction already exists.", "danger");
+            } finally {
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.innerText = 'Save Record'; }
+            }
         }
 
         function editTAssRecord(id) {
@@ -1884,14 +1914,30 @@
                     };
 
                     const existing = aeRecords.find(r =>
-                        r.province === record.province &&
-                        r.municipality === record.municipality &&
+                        r.province.toLowerCase() === record.province.toLowerCase() &&
+                        r.municipality.toLowerCase() === record.municipality.toLowerCase() &&
                         r.year == record.year &&
                         r.month == record.month &&
-                        r.establishment === record.establishment
+                        r.establishment.toLowerCase() === record.establishment.toLowerCase()
                     );
 
-                    if (existing) {
+                    // Also check against rows already queued from earlier in THIS SAME file,
+                    // so duplicate rows in one upload don't both try to insert as "new"
+                    // (which would violate the unique index and silently abort the import).
+                    const queuedIdx = pendingBulkAE.findIndex(item =>
+                        item.record.province.toLowerCase() === record.province.toLowerCase() &&
+                        item.record.municipality.toLowerCase() === record.municipality.toLowerCase() &&
+                        item.record.year == record.year &&
+                        item.record.month == record.month &&
+                        item.record.establishment.toLowerCase() === record.establishment.toLowerCase()
+                    );
+
+                    if (queuedIdx !== -1) {
+                        // Duplicate row within the same file: overwrite the queued entry, don't add a second one
+                        pendingBulkAE[queuedIdx] = existing
+                            ? { record, isUpdate: true, existingId: existing.id }
+                            : { record, isUpdate: false };
+                    } else if (existing) {
                         pendingBulkAE.push({ record, isUpdate: true, existingId: existing.id });
                         updateCount++;
                     } else {
@@ -1941,16 +1987,26 @@
                 showToast("No valid AE records are ready for import. Click Process Excel first and check the preview/errors.", "warning");
                 return;
             }
+            const btn = document.getElementById('btnConfirmBulkAE');
             const importCount = pendingBulkAE.length;
-            for (let item of pendingBulkAE) {
-                if (item.isUpdate && item.existingId) item.record.id = item.existingId;
-                await putRecordToStore("aes", item.record);
+            try {
+                if (btn) { btn.disabled = true; btn.innerText = 'Importing...'; }
+                for (let item of pendingBulkAE) {
+                    if (item.isUpdate && item.existingId) item.record.id = item.existingId;
+                    await putRecordToStore("aes", item.record);
+                }
+                pendingBulkAE = [];
+                await loadAllRecords();
+                await saveAllToCloud();
+                closeModal('modalBulkAE');
+                refreshAllViews();
+                showToast(`Bulk Import Complete! Added/Updated ${importCount} AE records.`, "success");
+            } catch (err) {
+                console.error("Bulk AE import failed:", err);
+                showToast("Bulk import failed: " + (err.message || err.name || "Unknown error") + ". Check for duplicate rows or Excel values that don't match an existing record's key exactly.", "danger");
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerText = 'Confirm & Import Data'; }
             }
-            await loadAllRecords();
-            await saveAllToCloud();
-            closeModal('modalBulkAE');
-            refreshAllViews();
-            showToast(`Bulk Import Complete! Added/Updated ${importCount} AE records.`, "success");
         }
 
         // Process TAss Bulk Excel
@@ -2010,14 +2066,29 @@
                     };
 
                     const existing = tassRecords.find(r =>
-                        r.province === record.province &&
-                        r.municipality === record.municipality &&
+                        r.province.toLowerCase() === record.province.toLowerCase() &&
+                        r.municipality.toLowerCase() === record.municipality.toLowerCase() &&
                         r.year == record.year &&
                         r.month == record.month &&
-                        r.attraction === record.attraction
+                        r.attraction.toLowerCase() === record.attraction.toLowerCase()
                     );
 
-                    if (existing) {
+                    // Also check against rows already queued from earlier in THIS SAME file,
+                    // so duplicate rows in one upload don't both try to insert as "new"
+                    // (which would violate the unique index and silently abort the import).
+                    const queuedIdx = pendingBulkTAss.findIndex(item =>
+                        item.record.province.toLowerCase() === record.province.toLowerCase() &&
+                        item.record.municipality.toLowerCase() === record.municipality.toLowerCase() &&
+                        item.record.year == record.year &&
+                        item.record.month == record.month &&
+                        item.record.attraction.toLowerCase() === record.attraction.toLowerCase()
+                    );
+
+                    if (queuedIdx !== -1) {
+                        pendingBulkTAss[queuedIdx] = existing
+                            ? { record, isUpdate: true, existingId: existing.id }
+                            : { record, isUpdate: false };
+                    } else if (existing) {
                         pendingBulkTAss.push({ record, isUpdate: true, existingId: existing.id });
                         updateCount++;
                     } else {
@@ -2068,16 +2139,26 @@
                 showToast("No valid TAss records are ready for import. Click Process Excel first and check the preview/errors.", "warning");
                 return;
             }
+            const btn = document.getElementById('btnConfirmBulkTAss');
             const importCount = pendingBulkTAss.length;
-            for (let item of pendingBulkTAss) {
-                if (item.isUpdate && item.existingId) item.record.id = item.existingId;
-                await putRecordToStore("tass", item.record);
+            try {
+                if (btn) { btn.disabled = true; btn.innerText = 'Importing...'; }
+                for (let item of pendingBulkTAss) {
+                    if (item.isUpdate && item.existingId) item.record.id = item.existingId;
+                    await putRecordToStore("tass", item.record);
+                }
+                pendingBulkTAss = [];
+                await loadAllRecords();
+                await saveAllToCloud();
+                closeModal('modalBulkTAss');
+                refreshAllViews();
+                showToast(`Bulk Import Complete! Added/Updated ${importCount} TAss records.`, "success");
+            } catch (err) {
+                console.error("Bulk TAss import failed:", err);
+                showToast("Bulk import failed: " + (err.message || err.name || "Unknown error") + ". Check for duplicate rows or Excel values that don't match an existing record's key exactly.", "danger");
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerText = 'Confirm & Import Data'; }
             }
-            await loadAllRecords();
-            await saveAllToCloud();
-            closeModal('modalBulkTAss');
-            refreshAllViews();
-            showToast(`Bulk Import Complete! Added/Updated ${importCount} TAss records.`, "success");
         }
 
         /**
