@@ -295,6 +295,9 @@
                         <button onclick="openModal('modalBulkAE')" class="bg-navy-700 hover:bg-navy-800 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-file-import"></i> Bulk Upload Excel
                         </button>
+                        <button id="btnSaveAECloud" onclick="saveAECloudSection()" title="Saves only Tourist Arrivals records to the cloud — does not touch Same-Day Visitor data." class="bg-teal-700 hover:bg-teal-600 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-cloud-arrow-up"></i> Save Tourist Arrivals
+                        </button>
                         <button onclick="exportAEsExcel()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-file-export"></i> Export Excel
                         </button>
@@ -362,6 +365,9 @@
                         </button>
                         <button onclick="openModal('modalBulkTAss')" class="bg-navy-700 hover:bg-navy-800 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-file-import"></i> Bulk Upload Excel
+                        </button>
+                        <button id="btnSaveTAssCloud" onclick="saveTAssCloudSection()" title="Saves only Same-Day Visitor records to the cloud — does not touch Tourist Arrivals data." class="bg-teal-700 hover:bg-teal-600 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-cloud-arrow-up"></i> Save Same-Day Visitors
                         </button>
                         <button onclick="exportTAssExcel()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-file-export"></i> Export Excel
@@ -844,10 +850,12 @@
                 </div>
 
                 <!-- Preview Stats -->
-                <div id="bulkAESummary" class="hidden grid grid-cols-3 gap-3 text-center font-bold">
+                <div id="bulkAESummary" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-3 text-center font-bold">
+                    <div class="p-2 bg-slate-100 text-slate-800 rounded"><span id="bulkAETotalCount">0</span> Total Rows Detected</div>
                     <div class="p-2 bg-emerald-100 text-emerald-800 rounded"><span id="bulkAENewCount">0</span> New Records</div>
                     <div class="p-2 bg-amber-100 text-amber-800 rounded"><span id="bulkAEUpdateCount">0</span> Updated Records</div>
                     <div class="p-2 bg-rose-100 text-rose-800 rounded"><span id="bulkAESkippedCount">0</span> Rejected/Errors</div>
+                    <div class="p-2 bg-sky-100 text-sky-800 rounded col-span-2 sm:col-span-4"><span id="bulkAEDupCount">0</span> Duplicate Rows Within This File (merged — last occurrence kept)</div>
                 </div>
 
                 <div id="bulkAEPreviewContainer" class="hidden overflow-x-auto max-h-60 border rounded custom-scrollbar">
@@ -897,10 +905,12 @@
                 </div>
 
                 <!-- Preview Stats -->
-                <div id="bulkTAssSummary" class="hidden grid grid-cols-3 gap-3 text-center font-bold">
+                <div id="bulkTAssSummary" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-3 text-center font-bold">
+                    <div class="p-2 bg-slate-100 text-slate-800 rounded"><span id="bulkTAssTotalCount">0</span> Total Rows Detected</div>
                     <div class="p-2 bg-emerald-100 text-emerald-800 rounded"><span id="bulkTAssNewCount">0</span> New Records</div>
                     <div class="p-2 bg-amber-100 text-amber-800 rounded"><span id="bulkTAssUpdateCount">0</span> Updated Records</div>
                     <div class="p-2 bg-rose-100 text-rose-800 rounded"><span id="bulkTAssSkippedCount">0</span> Rejected/Errors</div>
+                    <div class="p-2 bg-sky-100 text-sky-800 rounded col-span-2 sm:col-span-4"><span id="bulkTAssDupCount">0</span> Duplicate Rows Within This File (merged — last occurrence kept)</div>
                 </div>
 
                 <div id="bulkTAssPreviewContainer" class="hidden overflow-x-auto max-h-60 border rounded custom-scrollbar">
@@ -1031,6 +1041,19 @@
         async function loadAllRecords() {
             if (!db) return;
             aeRecords = await getAllFromStore("aes");
+            tassRecords = await getAllFromStore("tass");
+        }
+
+        // Section-scoped reloads: re-reads only the store that actually changed instead of
+        // both IndexedDB object stores on every single AE or TAss add/edit/delete. This keeps
+        // saving an AE record from doing a needless read of the (possibly much larger) TAss
+        // store, and vice versa — the win grows as either dataset grows into the thousands.
+        async function loadAERecords() {
+            if (!db) return;
+            aeRecords = await getAllFromStore("aes");
+        }
+        async function loadTAssRecords() {
+            if (!db) return;
             tassRecords = await getAllFromStore("tass");
         }
 
@@ -1234,41 +1257,83 @@
             }
         }
 
+        // Builds the Firestore batch operations for ONE collection (aes or tass), including
+        // only that collection's own pending-delete stragglers — so a section-scoped save
+        // never touches the other section's records or delete markers.
+        function buildCloudOpsForType(type) {
+            const { collection, doc } = window.cloudFns;
+            const name = type === "aes" ? "tourism_ae_records" : "tourism_tass_records";
+            const records = type === "aes" ? aeRecords : tassRecords;
+            const ops = records.map(r => ({
+                type: 'set',
+                ref: doc(collection(window.cloudDB, name), cloudDocId(type, r)),
+                data: { ...r, localId: r.id ?? null, cloudUpdatedAt: new Date().toISOString() }
+            }));
+            const pendingDeletes = getPendingCloudDeletes().filter(p => p.collectionName === name);
+            pendingDeletes.forEach(p => ops.push({
+                type: 'delete',
+                ref: doc(collection(window.cloudDB, p.collectionName), p.cloudId)
+            }));
+            return { ops, pendingDeletes };
+        }
+
+        async function commitCloudOps(ops) {
+            const { writeBatch } = window.cloudFns;
+            const chunks = [];
+            for (let i = 0; i < ops.length; i += 450) chunks.push(ops.slice(i, i + 450));
+            await Promise.all(chunks.map(chunk => {
+                const batch = writeBatch(window.cloudDB);
+                chunk.forEach(op => op.type === 'delete' ? batch.delete(op.ref) : batch.set(op.ref, op.data));
+                return batch.commit();
+            }));
+        }
+
+        // Section-scoped cloud save: reads and writes ONLY the given collection (aes or
+        // tass), so clicking "Save Tourist Arrivals" never re-reads or re-uploads the
+        // Same-Day Visitor dataset, and vice versa.
+        async function saveSectionToCloud(type, btnId, sectionLabel) {
+            const btn = document.getElementById(btnId);
+            const restoreHtml = btn ? btn.innerHTML : '';
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>Saving...</span>'; }
+            try {
+                if (!window.cloudDB || !window.cloudFns) throw new Error("Cloud database is not available.");
+                if (type === "aes") await loadAERecords(); else await loadTAssRecords();
+                const { ops, pendingDeletes } = buildCloudOpsForType(type);
+                await commitCloudOps(ops);
+                clearPendingCloudDeletes(pendingDeletes);
+                updateCloudStatus("Cloud Saved");
+                showToast(`${sectionLabel} saved to cloud: ${ops.length - pendingDeletes.length} record(s)${pendingDeletes.length ? `, ${pendingDeletes.length} pending deletion(s) cleaned up` : ''}.`, "success");
+            } catch (err) {
+                console.error(`Cloud save (${sectionLabel}) failed:`, err);
+                const msg = err.code === "permission-denied"
+                    ? "Firestore permission denied. Please check your Firebase Firestore rules."
+                    : (err.message || err.name || "Unknown error");
+                updateCloudStatus("Cloud Error");
+                showToast(`Error: Unable to save ${sectionLabel}. ` + msg, "danger");
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerHTML = restoreHtml; }
+            }
+        }
+
+        function saveAECloudSection() {
+            return saveSectionToCloud("aes", "btnSaveAECloud", "Tourist Arrivals");
+        }
+        function saveTAssCloudSection() {
+            return saveSectionToCloud("tass", "btnSaveTAssCloud", "Same-Day Visitors");
+        }
+
         async function saveAllToCloud() {
             const btn = document.getElementById("btnSaveCloud");
             if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>Saving...</span>'; }
             try {
                 if (!window.cloudDB || !window.cloudFns) throw new Error("Cloud database is not available.");
                 await loadAllRecords();
-                const { collection, doc, writeBatch } = window.cloudFns;
-                const ops = [];
+                const ae = buildCloudOpsForType("aes");
+                const tass = buildCloudOpsForType("tass");
+                const ops = [...ae.ops, ...tass.ops];
+                const pendingDeletes = [...ae.pendingDeletes, ...tass.pendingDeletes];
 
-                aeRecords.forEach(r => ops.push({
-                    type: 'set',
-                    ref: doc(collection(window.cloudDB, "tourism_ae_records"), cloudDocId("aes", r)),
-                    data: { ...r, localId: r.id ?? null, cloudUpdatedAt: new Date().toISOString() }
-                }));
-                tassRecords.forEach(r => ops.push({
-                    type: 'set',
-                    ref: doc(collection(window.cloudDB, "tourism_tass_records"), cloudDocId("tass", r)),
-                    data: { ...r, localId: r.id ?? null, cloudUpdatedAt: new Date().toISOString() }
-                }));
-
-                // Clean up any deletes that failed to reach the cloud earlier — targeted deletes
-                // of just those specific doc IDs, not a full-collection scan.
-                const pendingDeletes = getPendingCloudDeletes();
-                pendingDeletes.forEach(p => ops.push({
-                    type: 'delete',
-                    ref: doc(collection(window.cloudDB, p.collectionName), p.cloudId)
-                }));
-
-                const chunks = [];
-                for (let i = 0; i < ops.length; i += 450) chunks.push(ops.slice(i, i + 450));
-                await Promise.all(chunks.map(chunk => {
-                    const batch = writeBatch(window.cloudDB);
-                    chunk.forEach(op => op.type === 'delete' ? batch.delete(op.ref) : batch.set(op.ref, op.data));
-                    return batch.commit();
-                }));
+                await commitCloudOps(ops);
 
                 clearPendingCloudDeletes(pendingDeletes);
                 updateCloudStatus("Cloud Saved");
@@ -1354,6 +1419,29 @@
             refreshDashboard();
             renderAETable();
             renderTAssTable();
+        }
+
+        // Returns the id of the currently visible tab section (e.g. "view-dashboard"),
+        // so a section-scoped refresh only pays for the dashboard's chart re-render when
+        // the dashboard is actually the thing on screen.
+        function activeTabId() {
+            const el = document.querySelector('.tab-content:not(.hidden)');
+            return el ? el.id : null;
+        }
+
+        // Section-scoped refreshes: used after AE-only or TAss-only changes (single-record
+        // save/delete, bulk import) so editing one section never re-renders the other
+        // section's table or re-runs its chart calculations. Filter dropdowns are cheap
+        // (just distinct years/municipalities) so they stay lightweight either way.
+        function refreshAEViews() {
+            populateFilterOptions();
+            renderAETable();
+            if (activeTabId() === 'view-dashboard') refreshDashboard();
+        }
+        function refreshTAssViews() {
+            populateFilterOptions();
+            renderTAssTable();
+            if (activeTabId() === 'view-dashboard') refreshDashboard();
         }
 
         /**
@@ -1589,7 +1677,7 @@
 
                 html += `<tr class="hover:bg-slate-50 border-b">
                     <td class="p-3"><div class="font-bold text-slate-800">${r.municipality}</div><div class="text-[10px] text-slate-400">${r.province}</div></td>
-                    <td class="p-3"><div>${MONTH_NAMES[r.month - 1] || r.month}</div><div class="text-[10px] text-slate-400">${r.year}</div></td>
+                    <td class="p-3"><div>${r.month}</div><div class="text-[10px] text-slate-400">${r.year}</div></td>
                     <td class="p-3"><div class="font-bold text-slate-800">${r.establishment}</div><div class="text-[10px] text-teal-600">${r.type_class || 'N/A'}</div></td>
                     <td class="p-3 text-right">${Number(r.local_tourist||0).toLocaleString()}</td>
                     <td class="p-3 text-right">${Number(r.foreign_tourist||0).toLocaleString()}</td>
@@ -1679,11 +1767,14 @@
             try {
                 if (submitBtn) { submitBtn.disabled = true; submitBtn.innerText = 'Saving...'; }
                 await putRecordToStore("aes", record);
-                await loadAllRecords();
-                await saveSingleToCloud("aes", record);
+                await loadAERecords();
                 closeModal('modalAE');
-                refreshAllViews();
+                refreshAEViews();
                 showToast("Accommodation Establishment record saved successfully.", "success");
+                // Cloud sync happens in the background — the record is already durable in
+                // IndexedDB, so the user shouldn't wait on network latency to see "saved".
+                // updateCloudStatus() inside saveSingleToCloud reflects the outcome once it lands.
+                saveSingleToCloud("aes", record);
             } catch (err) {
                 console.error("Save AE record failed:", err);
                 showToast("Failed to save record: " + (err.message || err.name || "Unknown error") + ". This usually means a record with the same Province/Municipality/Year/Month/Establishment already exists.", "danger");
@@ -1717,10 +1808,10 @@
             if (confirm("Are you sure you want to delete this AE record?")) {
                 const deleted = aeRecords.find(r => r.id === id);
                 await deleteRecordFromStore("aes", id);
-                if (deleted) await deleteSingleFromCloud("aes", deleted);
-                await loadAllRecords();
-                refreshAllViews();
+                await loadAERecords();
+                refreshAEViews();
                 showToast("AE Record deleted.", "info");
+                if (deleted) deleteSingleFromCloud("aes", deleted); // background cloud cleanup
             }
         }
 
@@ -1756,7 +1847,7 @@
             filtered.forEach(r => {
                 html += `<tr class="hover:bg-slate-50 border-b">
                     <td class="p-3"><div class="font-bold text-slate-800">${r.municipality}</div><div class="text-[10px] text-slate-400">${r.province}</div></td>
-                    <td class="p-3"><div>${MONTH_NAMES[r.month - 1] || r.month}</div><div class="text-[10px] text-slate-400">${r.year}</div></td>
+                    <td class="p-3"><div>${r.month}</div><div class="text-[10px] text-slate-400">${r.year}</div></td>
                     <td class="p-3 font-bold text-slate-800">${r.attraction}</td>
                     <td class="p-3 text-right">${Number(r.tm_sum||0).toLocaleString()}</td>
                     <td class="p-3 text-right">${Number(r.om_sum||0).toLocaleString()}</td>
@@ -1862,11 +1953,11 @@
             try {
                 if (submitBtn) { submitBtn.disabled = true; submitBtn.innerText = 'Saving...'; }
                 await putRecordToStore("tass", record);
-                await loadAllRecords();
-                await saveSingleToCloud("tass", record);
+                await loadTAssRecords();
                 closeModal('modalTAss');
-                refreshAllViews();
+                refreshTAssViews();
                 showToast("Same-Day Visitor record saved successfully.", "success");
+                saveSingleToCloud("tass", record); // background cloud sync, see saveAERecord
             } catch (err) {
                 console.error("Save TAss record failed:", err);
                 showToast("Failed to save record: " + (err.message || err.name || "Unknown error") + ". This usually means a record with the same Province/Municipality/Year/Month/Attraction already exists.", "danger");
@@ -1901,10 +1992,10 @@
             if (confirm("Are you sure you want to delete this TAss record?")) {
                 const deleted = tassRecords.find(r => r.id === id);
                 await deleteRecordFromStore("tass", id);
-                if (deleted) await deleteSingleFromCloud("tass", deleted);
-                await loadAllRecords();
-                refreshAllViews();
+                await loadTAssRecords();
+                refreshTAssViews();
                 showToast("TAss Record deleted.", "info");
+                if (deleted) deleteSingleFromCloud("tass", deleted); // background cloud cleanup
             }
         }
 
@@ -1939,6 +2030,21 @@
             return String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         }
 
+        // Checks that the uploaded file's header row contains a recognizable version of
+        // each expected column before rows are parsed. The importer still falls back to
+        // column position when a name isn't recognized (so re-ordered/renamed sheets still
+        // mostly work), but the user gets an explicit warning instead of a silent guess —
+        // this is what satisfies "required columns are present / column names are
+        // recognized" without losing the existing positional-fallback flexibility.
+        function checkHeaderRecognition(headers, expectedGroups, contextLabel) {
+            const unrecognized = expectedGroups.filter(group => !group.some(a => headers.includes(normalizeExcelHeader(a))));
+            if (unrecognized.length) {
+                const names = unrecognized.map(g => g[0]).join(', ');
+                showToast(`${contextLabel}: column(s) not recognized by name — ${names}. Falling back to column position; please confirm the file matches the template.`, "warning");
+            }
+            return unrecognized;
+        }
+
         function rowValue(row, headers, aliases, fallbackIndex = -1) {
             for (const alias of aliases) {
                 const idx = headers.indexOf(normalizeExcelHeader(alias));
@@ -1957,8 +2063,21 @@
                 if (rows.length < 2) { showToast("Excel file is empty or missing data rows.", "warning"); return; }
 
                 const headers = rows[0].map(normalizeExcelHeader);
+                checkHeaderRecognition(headers, [
+                    ['Province', 'Province/HUC/ICC'],
+                    ['Municipality', 'Municipality/City'],
+                    ['Year'],
+                    ['Month'],
+                    ['Accommodation Establishment', 'Establishment'],
+                    ['Type Class', 'Type-Class', 'Type/Class'],
+                    ['Local Tourist', 'Local'],
+                    ['Foreign Tourist', 'Foreign'],
+                    ['Overseas Filipino', 'Overseas'],
+                    ['Total Male', 'Male'],
+                    ['Total Female', 'Female']
+                ], "Tourist Arrivals Import");
                 pendingBulkAE = [];
-                let newCount = 0, updateCount = 0, skippedCount = 0;
+                let newCount = 0, updateCount = 0, skippedCount = 0, dupInFileCount = 0, totalDataRows = 0;
                 const errors = [];
 
                 // O(1) lookup instead of scanning the full existing/pending arrays for every
@@ -1974,6 +2093,7 @@
                 for (let i = 1; i < rows.length; i++) {
                     const row = rows[i];
                     if (!row || row.every(v => String(v ?? '').trim() === '')) continue;
+                    totalDataRows++;
 
                     const prov = rowValue(row, headers, ['Province', 'Province/HUC/ICC'], 0) || 'Occidental Mindoro';
                     const muni = rowValue(row, headers, ['Municipality', 'Municipality/City'], 1);
@@ -2028,6 +2148,7 @@
 
                     if (queuedIdx !== -1) {
                         // Duplicate row within the same file: overwrite the queued entry, don't add a second one
+                        dupInFileCount++;
                         pendingBulkAE[queuedIdx] = existing
                             ? { record, isUpdate: true, existingId: existing.id }
                             : { record, isUpdate: false };
@@ -2042,9 +2163,11 @@
                     }
                 }
 
+                document.getElementById('bulkAETotalCount').innerText = totalDataRows;
                 document.getElementById('bulkAENewCount').innerText = newCount;
                 document.getElementById('bulkAEUpdateCount').innerText = updateCount;
                 document.getElementById('bulkAESkippedCount').innerText = skippedCount;
+                document.getElementById('bulkAEDupCount').innerText = dupInFileCount;
                 document.getElementById('bulkAESummary').classList.remove('hidden');
 
                 const previewBody = document.getElementById('bulkAEPreviewBody');
@@ -2055,7 +2178,7 @@
                         <td class="p-2 font-bold ${item.isUpdate ? 'text-amber-600' : 'text-emerald-600'}">${item.isUpdate ? 'UPDATE' : 'NEW'}</td>
                         <td class="p-2">${r.municipality}</td>
                         <td class="p-2 font-semibold">${r.establishment}</td>
-                        <td class="p-2">${r.year} / ${MONTH_NAMES[r.month-1]}</td>
+                        <td class="p-2">${r.year} / ${r.month}</td>
                         <td class="p-2">${r.local_tourist}</td>
                         <td class="p-2">${r.foreign_tourist}</td>
                         <td class="p-2 font-bold">${r.total_lf}</td>
@@ -2093,10 +2216,10 @@
                 });
                 await putRecordsToStore("aes", records);
                 pendingBulkAE = [];
-                await loadAllRecords();
+                await loadAERecords();
                 pushRecordsToCloud("aes", records); // fire-and-forget: local import is already done, don't make the user wait on cloud sync
                 closeModal('modalBulkAE');
-                refreshAllViews();
+                refreshAEViews();
                 showToast(`Bulk Import Complete! Added/Updated ${importCount} AE records.`, "success");
             } catch (err) {
                 console.error("Bulk AE import failed:", err);
@@ -2116,8 +2239,21 @@
                 if (rows.length < 2) { showToast("Excel file is empty or missing data rows.", "warning"); return; }
 
                 const headers = rows[0].map(normalizeExcelHeader);
+                checkHeaderRecognition(headers, [
+                    ['Province', 'Province/HUC/ICC'],
+                    ['Municipality', 'Municipality/City'],
+                    ['Year'],
+                    ['Month'],
+                    ['Tourist Attraction', 'Attraction'],
+                    ['TM(M)', 'Male TM(M)', 'TM Male'],
+                    ['TM(F)', 'Female TM(F)', 'TM Female'],
+                    ['OM(M)', 'Male OM(M)', 'OM Male'],
+                    ['OM(F)', 'Female OM(F)', 'OM Female'],
+                    ['FCR(M)', 'Male FCR(M)', 'FCR Male'],
+                    ['FCR(F)', 'Female FCR(F)', 'FCR Female']
+                ], "Same-Day Visitors Import");
                 pendingBulkTAss = [];
-                let newCount = 0, updateCount = 0, skippedCount = 0;
+                let newCount = 0, updateCount = 0, skippedCount = 0, dupInFileCount = 0, totalDataRows = 0;
                 const errors = [];
 
                 // O(1) lookup instead of scanning the full existing/pending arrays for every
@@ -2133,6 +2269,7 @@
                 for (let i = 1; i < rows.length; i++) {
                     const row = rows[i];
                     if (!row || row.every(v => String(v ?? '').trim() === '')) continue;
+                    totalDataRows++;
 
                     const prov = rowValue(row, headers, ['Province', 'Province/HUC/ICC'], 0) || 'Occidental Mindoro';
                     const muni = rowValue(row, headers, ['Municipality', 'Municipality/City'], 1);
@@ -2185,6 +2322,7 @@
                     const queuedIdx = queuedByKey.has(key) ? queuedByKey.get(key) : -1;
 
                     if (queuedIdx !== -1) {
+                        dupInFileCount++;
                         pendingBulkTAss[queuedIdx] = existing
                             ? { record, isUpdate: true, existingId: existing.id }
                             : { record, isUpdate: false };
@@ -2199,9 +2337,11 @@
                     }
                 }
 
+                document.getElementById('bulkTAssTotalCount').innerText = totalDataRows;
                 document.getElementById('bulkTAssNewCount').innerText = newCount;
                 document.getElementById('bulkTAssUpdateCount').innerText = updateCount;
                 document.getElementById('bulkTAssSkippedCount').innerText = skippedCount;
+                document.getElementById('bulkTAssDupCount').innerText = dupInFileCount;
                 document.getElementById('bulkTAssSummary').classList.remove('hidden');
 
                 const previewBody = document.getElementById('bulkTAssPreviewBody');
@@ -2212,7 +2352,7 @@
                         <td class="p-2 font-bold ${item.isUpdate ? 'text-amber-600' : 'text-emerald-600'}">${item.isUpdate ? 'UPDATE' : 'NEW'}</td>
                         <td class="p-2">${r.municipality}</td>
                         <td class="p-2 font-semibold">${r.attraction}</td>
-                        <td class="p-2">${r.year} / ${MONTH_NAMES[r.month-1]}</td>
+                        <td class="p-2">${r.year} / ${r.month}</td>
                         <td class="p-2">${r.tm_sum}</td>
                         <td class="p-2">${r.om_sum}</td>
                         <td class="p-2">${r.fcr_sum}</td>
@@ -2251,10 +2391,10 @@
                 });
                 await putRecordsToStore("tass", records);
                 pendingBulkTAss = [];
-                await loadAllRecords();
+                await loadTAssRecords();
                 pushRecordsToCloud("tass", records); // fire-and-forget: local import is already done, don't make the user wait on cloud sync
                 closeModal('modalBulkTAss');
-                refreshAllViews();
+                refreshTAssViews();
                 showToast(`Bulk Import Complete! Added/Updated ${importCount} TAss records.`, "success");
             } catch (err) {
                 console.error("Bulk TAss import failed:", err);
@@ -2584,13 +2724,13 @@
             if (!aeRecords.length) { showToast("No AE records to export.", "warning"); return; }
             const headers = ["Province","Municipality","Year","Month","Accommodation Establishment","Type Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total (L+F+Overseas)","Total Male","Total Female","Total (M+F)"];
             const rows = aeRecords.map(r => [
-                r.province, r.municipality, r.year, MONTH_NAMES[r.month-1], r.establishment, r.type_class || '',
+                r.province, r.municipality, r.year, Number(r.month), r.establishment, r.type_class || '',
                 Number(r.local_tourist||0), Number(r.foreign_tourist||0), Number(r.overseas_filipino||0),
                 Number(r.local_tourist||0)+Number(r.foreign_tourist||0)+Number(r.overseas_filipino||0),
                 Number(r.total_male||0), Number(r.total_female||0), Number(r.total_mf||0)
             ]);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers, rows, [2,6,7,8,9,10,11,12]), "AEs Data");
+            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers, rows, [2,3,6,7,8,9,10,11,12]), "AEs Data");
             XLSX.utils.book_append_sheet(wb, makeInfoSheet("Tourist Arrivals – Accommodation Establishments (AEs)", "Provincial & Municipal Tourism Statistics Portal"), "Info");
             saveWorkbook(wb, `Tourist_Arrivals_AEs_${new Date().toISOString().slice(0,10)}.xlsx`);
         }
@@ -2599,14 +2739,14 @@
             if (!tassRecords.length) { showToast("No TAss records to export.", "warning"); return; }
             const headers = ["Province","Municipality","Year","Month","Tourist Attraction","TM(M)","TM(F)","TM(SUM)","OM(M)","OM(F)","OM(SUM)","FCR(M)","FCR(F)","FCR(SUM)","Total Male","Total Female","Grand Total"];
             const rows = tassRecords.map(r => [
-                r.province, r.municipality, r.year, MONTH_NAMES[r.month-1], r.attraction,
+                r.province, r.municipality, r.year, Number(r.month), r.attraction,
                 Number(r.tm_m||0), Number(r.tm_f||0), Number(r.tm_sum||0),
                 Number(r.om_m||0), Number(r.om_f||0), Number(r.om_sum||0),
                 Number(r.fcr_m||0), Number(r.fcr_f||0), Number(r.fcr_sum||0),
                 Number(r.total_male||0), Number(r.total_female||0), Number(r.grand_total||0)
             ]);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers, rows, [2,5,6,7,8,9,10,11,12,13,14,15,16]), "TAss Data");
+            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers, rows, [2,3,5,6,7,8,9,10,11,12,13,14,15,16]), "TAss Data");
             XLSX.utils.book_append_sheet(wb, makeInfoSheet("Same-Day Visitors – Tourist Attraction Arrivals (TAss)", "Provincial & Municipal Tourism Statistics Portal"), "Info");
             saveWorkbook(wb, `SameDay_Visitors_TAss_${new Date().toISOString().slice(0,10)}.xlsx`);
         }
@@ -2627,12 +2767,15 @@
 
         function exportBackupExcel() {
             const wb = XLSX.utils.book_new();
-            const aeHeaders = ["ID","Province","Municipality","Year","Month","Accommodation Establishment","Type Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total (L+F+Overseas)","Total Male","Total Female","Total (M+F)"];
-            const aeRows = aeRecords.map(r => [r.id||'',r.province,r.municipality,r.year,MONTH_NAMES[r.month-1],r.establishment,r.type_class||'',Number(r.local_tourist||0),Number(r.foreign_tourist||0),Number(r.overseas_filipino||0),Number(r.total_lf||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.total_mf||0)]);
+            // Tourist Arrivals (AE) backup sheet: no ID column (per request) — restoring a
+            // backup always clears and re-inserts both stores anyway, so IDs aren't needed
+            // for the round trip; IndexedDB just assigns fresh auto-increment IDs on restore.
+            const aeHeaders = ["Province","Municipality","Year","Month","Accommodation Establishment","Type Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total (L+F+Overseas)","Total Male","Total Female","Total (M+F)"];
+            const aeRows = aeRecords.map(r => [r.province,r.municipality,r.year,Number(r.month),r.establishment,r.type_class||'',Number(r.local_tourist||0),Number(r.foreign_tourist||0),Number(r.overseas_filipino||0),Number(r.total_lf||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.total_mf||0)]);
             const taHeaders = ["ID","Province","Municipality","Year","Month","Tourist Attraction","TM(M)","TM(F)","TM(SUM)","OM(M)","OM(F)","OM(SUM)","FCR(M)","FCR(F)","FCR(SUM)","Total Male","Total Female","Grand Total"];
-            const taRows = tassRecords.map(r => [r.id||'',r.province,r.municipality,r.year,MONTH_NAMES[r.month-1],r.attraction,Number(r.tm_m||0),Number(r.tm_f||0),Number(r.tm_sum||0),Number(r.om_m||0),Number(r.om_f||0),Number(r.om_sum||0),Number(r.fcr_m||0),Number(r.fcr_f||0),Number(r.fcr_sum||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.grand_total||0)]);
-            XLSX.utils.book_append_sheet(wb, makeDataSheet(aeHeaders, aeRows, [0,3,7,8,9,10,11,12,13]), "AEs");
-            XLSX.utils.book_append_sheet(wb, makeDataSheet(taHeaders, taRows, [0,3,6,7,8,9,10,11,12,13,14,15,16,17]), "TAss");
+            const taRows = tassRecords.map(r => [r.id||'',r.province,r.municipality,r.year,Number(r.month),r.attraction,Number(r.tm_m||0),Number(r.tm_f||0),Number(r.tm_sum||0),Number(r.om_m||0),Number(r.om_f||0),Number(r.om_sum||0),Number(r.fcr_m||0),Number(r.fcr_f||0),Number(r.fcr_sum||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.grand_total||0)]);
+            XLSX.utils.book_append_sheet(wb, makeDataSheet(aeHeaders, aeRows, [2,3,6,7,8,9,10,11,12]), "AEs");
+            XLSX.utils.book_append_sheet(wb, makeDataSheet(taHeaders, taRows, [0,3,4,6,7,8,9,10,11,12,13,14,15,16,17]), "TAss");
             XLSX.utils.book_append_sheet(wb, makeInfoSheet("Tourism Data Banking System – Full Database Backup", "Do not edit sheet names or column headers if this workbook will be restored."), "Backup Info");
             saveWorkbook(wb, `TourismDB_Backup_${new Date().toISOString().slice(0,10)}.xlsx`);
             showToast("Excel database backup downloaded successfully.", "success");
@@ -2701,18 +2844,18 @@
 
         function downloadAETemplate() {
             const headers = ["Province","Municipality","Year","Month","Accommodation Establishment","Type Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total Male","Total Female"];
-            const sample = ["Occidental Mindoro","Mamburao",2026,"January","Sample Establishment","Hotel",0,0,0,0,0];
+            const sample = ["Occidental Mindoro","Mamburao",2026,1,"Sample Establishment","Hotel",0,0,0,0,0];
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers,[sample],[2,6,7,8,9,10]),"AEs Data");
+            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers,[sample],[2,3,6,7,8,9,10]),"AEs Data");
             XLSX.utils.book_append_sheet(wb, makeInfoSheet("AEs Excel Upload Template","Enter one record per row. Total columns are calculated by the system; do not enter formulas for totals."),"Instructions");
             saveWorkbook(wb, "Tourism_AEs_Excel_Upload_Template.xlsx");
         }
 
         function downloadTAssTemplate() {
             const headers = ["Province","Municipality","Year","Month","Tourist Attraction","TM(M)","TM(F)","OM(M)","OM(F)","FCR(M)","FCR(F)"];
-            const sample = ["Occidental Mindoro","Mamburao",2026,"January","Sample Attraction",0,0,0,0,0,0];
+            const sample = ["Occidental Mindoro","Mamburao",2026,1,"Sample Attraction",0,0,0,0,0,0];
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers,[sample],[2,5,6,7,8,9,10]),"TAss Data");
+            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers,[sample],[2,3,5,6,7,8,9,10]),"TAss Data");
             XLSX.utils.book_append_sheet(wb, makeInfoSheet("TAss Excel Upload Template","Enter one record per row. SUM and total columns are calculated by the system; do not enter formulas for totals."),"Instructions");
             saveWorkbook(wb, "Tourism_TAss_Excel_Upload_Template.xlsx");
         }
