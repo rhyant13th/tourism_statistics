@@ -1171,16 +1171,40 @@
             }
         }
 
+        // Small local queue of cloud doc deletes that failed to go through immediately
+        // (e.g. a network blip). This lets "Save to Cloud" clean up stragglers by deleting
+        // just those specific docs, instead of downloading and diffing the entire cloud
+        // collection on every save to look for orphans.
+        function getPendingCloudDeletes() {
+            try { return JSON.parse(localStorage.getItem('toaks_pending_cloud_deletes') || '[]'); }
+            catch { return []; }
+        }
+        function addPendingCloudDelete(collectionName, cloudId) {
+            const list = getPendingCloudDeletes();
+            if (!list.some(p => p.collectionName === collectionName && p.cloudId === cloudId)) {
+                list.push({ collectionName, cloudId });
+                localStorage.setItem('toaks_pending_cloud_deletes', JSON.stringify(list));
+            }
+        }
+        function clearPendingCloudDeletes(succeeded) {
+            const remaining = getPendingCloudDeletes().filter(p =>
+                !succeeded.some(s => s.collectionName === p.collectionName && s.cloudId === p.cloudId)
+            );
+            localStorage.setItem('toaks_pending_cloud_deletes', JSON.stringify(remaining));
+        }
+
         async function deleteSingleFromCloud(type, record) {
+            const name = type === "aes" ? "tourism_ae_records" : "tourism_tass_records";
+            const cloudId = cloudDocId(type, record);
             try {
                 if (!window.cloudDB || !window.cloudFns) return;
                 const { collection, doc, deleteDoc } = window.cloudFns;
-                const name = type === "aes" ? "tourism_ae_records" : "tourism_tass_records";
-                await deleteDoc(doc(collection(window.cloudDB, name), cloudDocId(type, record)));
+                await deleteDoc(doc(collection(window.cloudDB, name), cloudId));
                 updateCloudStatus("Cloud Saved");
             } catch (err) {
                 console.warn("Cloud delete failed:", err);
-                showToast("Record deleted locally, but cloud delete failed.", "warning");
+                addPendingCloudDelete(name, cloudId);
+                showToast("Record deleted locally, but cloud delete failed. It will be cleaned up next time you click Save to Cloud.", "warning");
             }
         }
 
@@ -1216,11 +1240,8 @@
             try {
                 if (!window.cloudDB || !window.cloudFns) throw new Error("Cloud database is not available.");
                 await loadAllRecords();
-                const { collection, doc, getDocs, writeBatch } = window.cloudFns;
+                const { collection, doc, writeBatch } = window.cloudFns;
                 const ops = [];
-
-                const localAEIds = new Set(aeRecords.map(r => cloudDocId("aes", r)));
-                const localTAssIds = new Set(tassRecords.map(r => cloudDocId("tass", r)));
 
                 aeRecords.forEach(r => ops.push({
                     type: 'set',
@@ -1233,27 +1254,25 @@
                     data: { ...r, localId: r.id ?? null, cloudUpdatedAt: new Date().toISOString() }
                 }));
 
-                // Reconcile: remove any cloud docs that no longer correspond to a local record
-                // (e.g. records that were deleted locally but whose cloud delete never went through).
-                let deleteCount = 0;
-                const [aeSnap, tassSnap] = await Promise.all([
-                    getDocs(collection(window.cloudDB, "tourism_ae_records")),
-                    getDocs(collection(window.cloudDB, "tourism_tass_records"))
-                ]);
-                aeSnap.docs.forEach(d => {
-                    if (!localAEIds.has(d.id)) { ops.push({ type: 'delete', ref: d.ref }); deleteCount++; }
-                });
-                tassSnap.docs.forEach(d => {
-                    if (!localTAssIds.has(d.id)) { ops.push({ type: 'delete', ref: d.ref }); deleteCount++; }
-                });
+                // Clean up any deletes that failed to reach the cloud earlier — targeted deletes
+                // of just those specific doc IDs, not a full-collection scan.
+                const pendingDeletes = getPendingCloudDeletes();
+                pendingDeletes.forEach(p => ops.push({
+                    type: 'delete',
+                    ref: doc(collection(window.cloudDB, p.collectionName), p.cloudId)
+                }));
 
-                for (let i = 0; i < ops.length; i += 450) {
+                const chunks = [];
+                for (let i = 0; i < ops.length; i += 450) chunks.push(ops.slice(i, i + 450));
+                await Promise.all(chunks.map(chunk => {
                     const batch = writeBatch(window.cloudDB);
-                    ops.slice(i, i + 450).forEach(op => op.type === 'delete' ? batch.delete(op.ref) : batch.set(op.ref, op.data));
-                    await batch.commit();
-                }
+                    chunk.forEach(op => op.type === 'delete' ? batch.delete(op.ref) : batch.set(op.ref, op.data));
+                    return batch.commit();
+                }));
+
+                clearPendingCloudDeletes(pendingDeletes);
                 updateCloudStatus("Cloud Saved");
-                showToast(`Cloud save complete: ${ops.length - deleteCount} records saved${deleteCount ? `, ${deleteCount} stale cloud record(s) removed` : ''}.`, "success");
+                showToast(`Cloud save complete: ${ops.length - pendingDeletes.length} records saved${pendingDeletes.length ? `, ${pendingDeletes.length} pending deletion(s) cleaned up` : ''}.`, "success");
             } catch (err) {
                 console.error("Cloud save failed:", err);
                 const msg = err.code === "permission-denied"
