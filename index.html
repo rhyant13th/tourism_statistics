@@ -1217,7 +1217,7 @@
                             ...r, localId: r.id ?? null, cloudUpdatedAt: new Date().toISOString()
                         });
                     });
-                    await batch.commit();
+                    await withCloudTimeout(batch.commit(), 30000);
                 }
                 updateCloudStatus("Cloud Saved");
             } catch (err) {
@@ -1246,15 +1246,31 @@
             return { ops, pendingDeletes };
         }
 
+        // Wraps a promise so it never hangs forever — if Firestore can't reach the server
+        // (blocked connection, offline, stuck request) this rejects with a clear timeout
+        // error instead of leaving the Save button spinning indefinitely with no feedback.
+        function withCloudTimeout(promise, ms = 30000) {
+            return Promise.race([
+                promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error(
+                    `Cloud save timed out after ${Math.round(ms / 1000)}s. This usually means Firestore can't be reached ` +
+                    `(no internet, a firewall/ad-blocker blocking firestore.googleapis.com, or the project is misconfigured) ` +
+                    `rather than the save actually failing. Check your connection and try again.`
+                )), ms))
+            ]);
+        }
+
         async function commitCloudOps(ops) {
             const { writeBatch } = window.cloudFns;
             const chunks = [];
             for (let i = 0; i < ops.length; i += 450) chunks.push(ops.slice(i, i + 450));
-            await Promise.all(chunks.map(chunk => {
+            // 30s base timeout, plus a little extra per additional chunk for genuinely large saves.
+            const timeoutMs = 30000 + Math.max(0, chunks.length - 1) * 15000;
+            await withCloudTimeout(Promise.all(chunks.map(chunk => {
                 const batch = writeBatch(window.cloudDB);
                 chunk.forEach(op => op.type === 'delete' ? batch.delete(op.ref) : batch.set(op.ref, op.data));
                 return batch.commit();
-            }));
+            })), timeoutMs);
         }
 
         // Section-scoped cloud save: reads and writes ONLY the given collection (aes or
@@ -1268,6 +1284,7 @@
                 if (!window.cloudDB || !window.cloudFns) throw new Error("Cloud database is not available.");
                 if (type === "aes") await loadAERecords(); else await loadTAssRecords();
                 const { ops, pendingDeletes } = buildCloudOpsForType(type);
+                if (btn) { btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Saving ${ops.length.toLocaleString()} record(s)...</span>`; }
                 await commitCloudOps(ops);
                 clearPendingCloudDeletes(pendingDeletes);
                 updateCloudStatus("Cloud Saved");
@@ -1302,6 +1319,7 @@
                 const ops = [...ae.ops, ...tass.ops];
                 const pendingDeletes = [...ae.pendingDeletes, ...tass.pendingDeletes];
 
+                if (btn) { btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Saving ${ops.length.toLocaleString()}...</span>`; }
                 await commitCloudOps(ops);
 
                 clearPendingCloudDeletes(pendingDeletes);
