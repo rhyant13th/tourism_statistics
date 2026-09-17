@@ -42,6 +42,10 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
+    import {
+      getFirestore, collection, getDocs, getDoc, doc, setDoc, deleteDoc, writeBatch,
+      query, where
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyAzEmPXSJs2i1OZqTkwE1cSOR7GQ0gUDFo",
@@ -55,6 +59,13 @@
 
     const app = initializeApp(firebaseConfig);
     const analytics = getAnalytics(app);
+    const cloudDB = getFirestore(app);
+
+    // Expose Firestore to the main application script. The promise makes sure
+    // the app waits for Firebase to finish loading before attempting cloud sync.
+    window.cloudDB = cloudDB;
+    window.cloudFns = { collection, getDocs, getDoc, doc, setDoc, deleteDoc, writeBatch, query, where };
+    window.cloudReadyPromise = Promise.resolve(true);
   </script>
 </head>
 <body class="bg-slate-100 font-sans text-slate-800 antialiased min-h-screen flex flex-col">
@@ -77,9 +88,12 @@
                 </div>
             </div>
             <div class="flex items-center space-x-3 text-xs md:text-sm">
-                <span id="dbStatusBadge" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-900 text-emerald-200">
-                    <span class="w-2 h-2 mr-1.5 bg-emerald-400 rounded-full animate-pulse"></span> IndexedDB Ready
+                <span id="dbStatusBadge" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-900 text-amber-200">
+                    <span class="w-2 h-2 mr-1.5 bg-amber-400 rounded-full animate-pulse"></span> Connecting to Cloud...
                 </span>
+                <button id="btnSaveCloud" onclick="saveAllToCloud()" class="bg-teal-700 hover:bg-teal-600 text-white px-3 py-1.5 rounded-lg border border-teal-600 transition flex items-center gap-1.5 text-xs">
+                    <i class="fa-solid fa-cloud-arrow-up"></i> <span class="hidden sm:inline">Save to Cloud</span>
+                </button>
                 <button id="btnQuickBackup" onclick="exportBackupExcel()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5 text-xs">
                     <i class="fa-solid fa-download"></i> <span class="hidden sm:inline">Quick Backup</span>
                 </button>
@@ -135,7 +149,7 @@
             
             <div class="p-4 border-t border-slate-700/50 text-xs text-slate-400">
                 <p>System Version: 3.3.0</p>
-                <p class="mt-1">IndexedDB High-Capacity Storage</p>
+                <p class="mt-1">Firestore Cloud + IndexedDB Cache</p>
             </div>
         </aside>
 
@@ -986,21 +1000,43 @@
         /**
          * INITIALIZATION & INDEXEDDB STORAGE SETUP
          */
-        window.onload = function() {
-            initIndexedDB().then(() => {
-                loadAllRecords().then(() => {
+        window.onload = async function() {
+            try {
+                await initIndexedDB();
+                await loadAllRecords();
+
+                // Firestore is the shared source of truth. If it already contains
+                // data, use it in this browser. If Firestore is empty but this
+                // browser has existing IndexedDB data, migrate that data once.
+                const cloud = await loadAllFromCloud();
+                if (cloud.connected && cloud.hasData) {
+                    refreshAllViews();
+                } else if (cloud.connected && !cloud.hasData && (aeRecords.length || tassRecords.length)) {
+                    await saveAllToCloud(false);
+                    refreshAllViews();
+                    showToast("Existing local records were migrated to the shared cloud database.", "success");
+                } else if (!cloud.connected) {
                     if (aeRecords.length === 0 && tassRecords.length === 0) {
-                        preloadSampleData();
+                        await preloadSampleData();
                     } else {
                         refreshAllViews();
                     }
-                });
-            }).catch(err => {
-                console.error("IndexedDB load failed, falling back to local memory:", err);
-                showToast("IndexedDB Initialization Error. Falling back to local storage.", "warning");
-            });
+                } else {
+                    // Cloud is connected but empty and there is no local data.
+                    // Keep the database empty rather than silently creating demo data.
+                    refreshAllViews();
+                    showToast("Cloud database is connected and currently empty. Upload or encode data to begin.", "info");
+                }
+            } catch (err) {
+                console.error("Database initialization failed:", err);
+                updateCloudStatus("Local Cache Only");
+                if (aeRecords.length === 0 && tassRecords.length === 0) {
+                    try { await preloadSampleData(); } catch (_) {}
+                } else {
+                    refreshAllViews();
+                }
+            }
 
-            // Mobile menu toggle listener
             document.getElementById('mobileMenuBtn').addEventListener('click', function() {
                 const sidebar = document.getElementById('sidebar');
                 sidebar.classList.toggle('hidden');
@@ -1086,6 +1122,167 @@
             });
         }
 
+        /**
+         * FIRESTORE CLOUD STORAGE
+         * Firestore is the shared master copy. IndexedDB remains a local cache
+         * so the application remains responsive and can recover from temporary
+         * network interruptions.
+         */
+        const CLOUD_AE = "tourism_ae_records";
+        const CLOUD_TASS = "tourism_tass_records";
+
+        function cloudDocId(type, r) {
+            const subject = type === "aes" ? r.establishment : r.attraction;
+            const parts = [r.province, r.municipality, r.year, r.month, subject];
+            return parts.map(v => String(v ?? "").trim().toLowerCase())
+                .join("__").replace(/[^a-z0-9_-]+/g, "_").slice(0, 500);
+        }
+
+        function updateCloudStatus(label, good = false) {
+            const badge = document.getElementById("dbStatusBadge");
+            if (!badge) return;
+            badge.className = `inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${good ? "bg-emerald-900 text-emerald-200" : "bg-amber-900 text-amber-200"}`;
+            badge.innerHTML = `<span class="w-2 h-2 mr-1.5 ${good ? "bg-emerald-400" : "bg-amber-400"} rounded-full"></span> ${label}`;
+        }
+
+        function cleanCloudRecord(r) {
+            const copy = { ...r };
+            delete copy.id;
+            delete copy.localId;
+            delete copy.cloudUpdatedAt;
+            return copy;
+        }
+
+        async function waitForCloud() {
+            if (window.cloudReadyPromise) await window.cloudReadyPromise;
+            if (!window.cloudDB || !window.cloudFns) throw new Error("Firestore is not available.");
+        }
+
+        async function getCloudRecords(type) {
+            await waitForCloud();
+            const { collection, getDocs } = window.cloudFns;
+            const name = type === "aes" ? CLOUD_AE : CLOUD_TASS;
+            const snap = await getDocs(collection(window.cloudDB, name));
+            return snap.docs.map(d => cleanCloudRecord(d.data()));
+        }
+
+        async function loadAllFromCloud() {
+            try {
+                await waitForCloud();
+                const [cloudAEs, cloudTAss] = await Promise.all([
+                    getCloudRecords("aes"),
+                    getCloudRecords("tass")
+                ]);
+
+                if (cloudAEs.length || cloudTAss.length) {
+                    await clearStore("aes");
+                    await clearStore("tass");
+                    for (const r of cloudAEs) await putRecordToStore("aes", r);
+                    for (const r of cloudTAss) await putRecordToStore("tass", r);
+                    await loadAllRecords();
+                    updateCloudStatus(`Cloud Synced (${(cloudAEs.length + cloudTAss.length).toLocaleString()})`, true);
+                    return { connected: true, hasData: true };
+                }
+
+                updateCloudStatus("Cloud Connected — Empty", true);
+                return { connected: true, hasData: false };
+            } catch (err) {
+                console.error("Firestore load failed:", err);
+                updateCloudStatus("Cloud Error — Local Cache");
+                return { connected: false, hasData: false, error: err };
+            }
+        }
+
+        async function saveRecordsToCloud(type, records) {
+            await waitForCloud();
+            const { collection, doc, writeBatch, setDoc } = window.cloudFns;
+            const name = type === "aes" ? CLOUD_AE : CLOUD_TASS;
+            const clean = dedupePendingRecords(type, records).map(cleanCloudRecord);
+            // Firestore batches are limited to 500 writes. Chunk the upload.
+            for (let i = 0; i < clean.length; i += 450) {
+                const batch = writeBatch(window.cloudDB);
+                const chunk = clean.slice(i, i + 450);
+                chunk.forEach(r => {
+                    batch.set(doc(collection(window.cloudDB, name), cloudDocId(type, r)), {
+                        ...r,
+                        cloudUpdatedAt: new Date().toISOString()
+                    });
+                });
+                await batch.commit();
+            }
+        }
+
+        async function saveAllToCloud(showMessage = true) {
+            try {
+                updateCloudStatus("Saving to Cloud...");
+                await Promise.all([
+                    saveRecordsToCloud("aes", aeRecords),
+                    saveRecordsToCloud("tass", tassRecords)
+                ]);
+                updateCloudStatus(`Cloud Saved (${(aeRecords.length + tassRecords.length).toLocaleString()})`, true);
+                if (showMessage) showToast(`Cloud save complete: ${(aeRecords.length + tassRecords.length).toLocaleString()} records.`, "success");
+                return true;
+            } catch (err) {
+                console.error("Firestore save failed:", err);
+                updateCloudStatus("Cloud Save Failed");
+                showToast("Cloud save failed: " + err.message, "danger");
+                return false;
+            }
+        }
+
+        async function deleteRecordFromCloud(type, record) {
+            await waitForCloud();
+            const { collection, doc, deleteDoc } = window.cloudFns;
+            const name = type === "aes" ? CLOUD_AE : CLOUD_TASS;
+            await deleteDoc(doc(collection(window.cloudDB, name), cloudDocId(type, record)));
+        }
+
+        async function setRecordToCloud(type, record) {
+            await waitForCloud();
+            const { collection, doc, setDoc } = window.cloudFns;
+            const name = type === "aes" ? CLOUD_AE : CLOUD_TASS;
+            await setDoc(doc(collection(window.cloudDB, name), cloudDocId(type, record)), {
+                ...cleanCloudRecord(record),
+                cloudUpdatedAt: new Date().toISOString()
+            });
+        }
+
+        async function replacePeriodInCloud(type, records, periods) {
+            await waitForCloud();
+            const { collection, query, where, getDocs, doc, writeBatch } = window.cloudFns;
+            const name = type === "aes" ? CLOUD_AE : CLOUD_TASS;
+            const periodRecords = dedupePendingRecords(type, records);
+
+            // Delete only the uploaded reporting period(s), not the whole database.
+            for (const period of periods) {
+                const q = query(
+                    collection(window.cloudDB, name),
+                    where("year", "==", Number(period.year)),
+                    where("month", "==", Number(period.month))
+                );
+                const snap = await getDocs(q);
+                const deletes = snap.docs.map(d => d.ref);
+                for (let i = 0; i < deletes.length; i += 450) {
+                    const batch = writeBatch(window.cloudDB);
+                    deletes.slice(i, i + 450).forEach(ref => batch.delete(ref));
+                    await batch.commit();
+                }
+            }
+
+            // Add the replacement records in chunks.
+            for (let i = 0; i < periodRecords.length; i += 450) {
+                const batch = writeBatch(window.cloudDB);
+                periodRecords.slice(i, i + 450).forEach(r => {
+                    const { collection, doc } = window.cloudFns;
+                    batch.set(doc(collection(window.cloudDB, name), cloudDocId(type, r)), {
+                        ...cleanCloudRecord(r),
+                        cloudUpdatedAt: new Date().toISOString()
+                    });
+                });
+                await batch.commit();
+            }
+        }
+
 
         // Replace the uploaded Year + Month snapshot only.
         function getReportingPeriods(records) {
@@ -1114,7 +1311,10 @@
             const existingCount=countRecordsForPeriods(inMemoryRecords,periods), periodText=formatReportingPeriods(periods);
             const message=existingCount>0?`Existing ${label} data was found for ${periodText}.\n\nThis will REPLACE ALL existing ${label} records for ${periodText}.\n\nOld records: ${existingCount.toLocaleString()}\nNew records: ${newRecords.length.toLocaleString()}\n\nOther months and years will remain unchanged.\n\nContinue?`:`This will save ${newRecords.length.toLocaleString()} ${label} records for ${periodText}.\n\nOther months and years will remain unchanged.\n\nContinue?`;
             if(!confirm(message))return false;
-            const savedRecords=await replacePeriodsInStore(storeName,newRecords,periods); const periodKeys=new Set(periods.map(p=>`${p.year}-${p.month}`)); const retained=inMemoryRecords.filter(r=>!periodKeys.has(`${Number(r.year)}-${Number(r.month)}`)); inMemoryRecords.splice(0,inMemoryRecords.length,...retained,...savedRecords);return true;
+            // Cloud is the shared master copy. Only after the cloud replacement
+            // succeeds do we update this browser's IndexedDB cache.
+            await replacePeriodInCloud(storeName, newRecords, periods);
+            const savedRecords=await replacePeriodsInStore(storeName,newRecords,periods); const periodKeys=new Set(periods.map(p=>`${p.year}-${p.month}`)); const retained=inMemoryRecords.filter(r=>!periodKeys.has(`${Number(r.year)}-${Number(r.month)}`)); inMemoryRecords.splice(0,inMemoryRecords.length,...retained,...savedRecords); updateCloudStatus("Cloud Saved", true); return true;
         }
 
         /**
@@ -1147,6 +1347,7 @@
                 await clearStore("aes");
                 await clearStore("tass");
                 await preloadSampleData();
+                await saveAllToCloud(false);
             }
         }
 
@@ -1513,6 +1714,8 @@
             }
 
             await putRecordToStore("aes", record);
+            try { await setRecordToCloud("aes", record); updateCloudStatus("Cloud Saved", true); }
+            catch (cloudErr) { console.error(cloudErr); showToast("Local record saved, but cloud save failed: " + cloudErr.message, "warning"); }
             await loadAllRecords();
             closeModal('modalAE');
             refreshAllViews();
@@ -1542,7 +1745,9 @@
 
         async function deleteAERecord(id) {
             if (confirm("Are you sure you want to delete this AE record?")) {
+                const record = aeRecords.find(x => x.id === id);
                 await deleteRecordFromStore("aes", id);
+                if (record) { try { await deleteRecordFromCloud("aes", record); } catch (cloudErr) { console.error(cloudErr); showToast("Local deletion completed, but cloud deletion failed: " + cloudErr.message, "warning"); } }
                 await loadAllRecords();
                 refreshAllViews();
                 showToast("AE Record deleted.", "info");
@@ -1684,6 +1889,8 @@
             }
 
             await putRecordToStore("tass", record);
+            try { await setRecordToCloud("tass", record); updateCloudStatus("Cloud Saved", true); }
+            catch (cloudErr) { console.error(cloudErr); showToast("Local record saved, but cloud save failed: " + cloudErr.message, "warning"); }
             await loadAllRecords();
             closeModal('modalTAss');
             refreshAllViews();
@@ -1714,7 +1921,9 @@
 
         async function deleteTAssRecord(id) {
             if (confirm("Are you sure you want to delete this TAss record?")) {
+                const record = tassRecords.find(x => x.id === id);
                 await deleteRecordFromStore("tass", id);
+                if (record) { try { await deleteRecordFromCloud("tass", record); } catch (cloudErr) { console.error(cloudErr); showToast("Local deletion completed, but cloud deletion failed: " + cloudErr.message, "warning"); } }
                 await loadAllRecords();
                 refreshAllViews();
                 showToast("TAss Record deleted.", "info");
@@ -2420,8 +2629,9 @@
                 }
 
                 await loadAllRecords();
+                const cloudSaved = await saveAllToCloud(false);
                 refreshAllViews();
-                showToast("Database successfully restored from Excel!", "success");
+                showToast(cloudSaved ? "Database restored and saved to the shared cloud." : "Database restored locally, but cloud save failed.", cloudSaved ? "success" : "warning");
             } catch (err) {
                 showToast("Failed to restore database: " + err.message, "danger");
             } finally {
