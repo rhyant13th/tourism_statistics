@@ -1054,6 +1054,29 @@
             });
         }
 
+        // Batched version for bulk imports: puts every record inside a SINGLE IndexedDB
+        // transaction instead of opening/committing a new transaction per record. Opening
+        // hundreds of separate readwrite transactions (each with its own disk flush) is the
+        // main reason large bulk imports feel slow — this brings an import of hundreds/
+        // thousands of rows down to one commit.
+        function putRecordsToStore(storeName, records) {
+            return new Promise((resolve, reject) => {
+                if (!records.length) return resolve([]);
+                const tx = db.transaction(storeName, "readwrite");
+                const store = tx.objectStore(storeName);
+                const results = [];
+                let errored = false;
+                records.forEach(record => {
+                    const req = store.put(record);
+                    req.onsuccess = () => results.push(req.result);
+                    req.onerror = () => { errored = true; };
+                });
+                tx.oncomplete = () => errored ? reject(new Error("One or more records could not be saved (likely a duplicate Province/Municipality/Year/Month/Establishment or Attraction combination).")) : resolve(results);
+                tx.onerror = () => reject(tx.error);
+                tx.onabort = () => reject(tx.error || new Error("Transaction aborted"));
+            });
+        }
+
         function deleteRecordFromStore(storeName, id) {
             return new Promise((resolve, reject) => {
                 const tx = db.transaction(storeName, "readwrite");
@@ -1158,6 +1181,32 @@
             } catch (err) {
                 console.warn("Cloud delete failed:", err);
                 showToast("Record deleted locally, but cloud delete failed.", "warning");
+            }
+        }
+
+        // Bulk-import cloud push: writes just the given records (chunked batches), without
+        // doing a full-collection reconciliation read like saveAllToCloud(). A bulk import
+        // never deletes anything, so there's nothing to reconcile — fetching every existing
+        // cloud doc first (as the "Save to Cloud" button does) would just add a slow, needless
+        // round trip for large imports.
+        async function pushRecordsToCloud(type, records) {
+            try {
+                if (!window.cloudDB || !window.cloudFns || !records.length) return;
+                const { collection, doc, writeBatch } = window.cloudFns;
+                const name = type === "aes" ? "tourism_ae_records" : "tourism_tass_records";
+                for (let i = 0; i < records.length; i += 450) {
+                    const batch = writeBatch(window.cloudDB);
+                    records.slice(i, i + 450).forEach(r => {
+                        batch.set(doc(collection(window.cloudDB, name), cloudDocId(type, r)), {
+                            ...r, localId: r.id ?? null, cloudUpdatedAt: new Date().toISOString()
+                        });
+                    });
+                    await batch.commit();
+                }
+                updateCloudStatus("Cloud Saved");
+            } catch (err) {
+                console.warn("Bulk cloud push failed:", err);
+                showToast("Records saved locally, but cloud sync failed: " + (err.message || err.name), "warning");
             }
         }
 
@@ -1893,6 +1942,16 @@
                 let newCount = 0, updateCount = 0, skippedCount = 0;
                 const errors = [];
 
+                // O(1) lookup instead of scanning the full existing/pending arrays for every
+                // row — with hundreds/thousands of rows the old .find()/.findIndex() approach
+                // became quadratic and was the main source of a "hanging" Process Excel step.
+                const existingByKey = new Map();
+                aeRecords.forEach(r => existingByKey.set(
+                    [r.province, r.municipality, r.year, r.month, r.establishment].map(v => String(v ?? '').trim().toLowerCase()).join('||'),
+                    r
+                ));
+                const queuedByKey = new Map();
+
                 for (let i = 1; i < rows.length; i++) {
                     const row = rows[i];
                     if (!row || row.every(v => String(v ?? '').trim() === '')) continue;
@@ -1936,24 +1995,17 @@
                         total_mf: male + female
                     };
 
-                    const existing = aeRecords.find(r =>
-                        r.province.toLowerCase() === record.province.toLowerCase() &&
-                        r.municipality.toLowerCase() === record.municipality.toLowerCase() &&
-                        r.year == record.year &&
-                        r.month == record.month &&
-                        r.establishment.toLowerCase() === record.establishment.toLowerCase()
+                    const existing = existingByKey.get(
+                        [record.province, record.municipality, record.year, record.month, record.establishment]
+                            .map(v => String(v ?? '').trim().toLowerCase()).join('||')
                     );
 
                     // Also check against rows already queued from earlier in THIS SAME file,
                     // so duplicate rows in one upload don't both try to insert as "new"
                     // (which would violate the unique index and silently abort the import).
-                    const queuedIdx = pendingBulkAE.findIndex(item =>
-                        item.record.province.toLowerCase() === record.province.toLowerCase() &&
-                        item.record.municipality.toLowerCase() === record.municipality.toLowerCase() &&
-                        item.record.year == record.year &&
-                        item.record.month == record.month &&
-                        item.record.establishment.toLowerCase() === record.establishment.toLowerCase()
-                    );
+                    const key = [record.province, record.municipality, record.year, record.month, record.establishment]
+                        .map(v => String(v ?? '').trim().toLowerCase()).join('||');
+                    const queuedIdx = queuedByKey.has(key) ? queuedByKey.get(key) : -1;
 
                     if (queuedIdx !== -1) {
                         // Duplicate row within the same file: overwrite the queued entry, don't add a second one
@@ -1962,9 +2014,11 @@
                             : { record, isUpdate: false };
                     } else if (existing) {
                         pendingBulkAE.push({ record, isUpdate: true, existingId: existing.id });
+                        queuedByKey.set(key, pendingBulkAE.length - 1);
                         updateCount++;
                     } else {
                         pendingBulkAE.push({ record, isUpdate: false });
+                        queuedByKey.set(key, pendingBulkAE.length - 1);
                         newCount++;
                     }
                 }
@@ -2014,13 +2068,14 @@
             const importCount = pendingBulkAE.length;
             try {
                 if (btn) { btn.disabled = true; btn.innerText = 'Importing...'; }
-                for (let item of pendingBulkAE) {
+                const records = pendingBulkAE.map(item => {
                     if (item.isUpdate && item.existingId) item.record.id = item.existingId;
-                    await putRecordToStore("aes", item.record);
-                }
+                    return item.record;
+                });
+                await putRecordsToStore("aes", records);
                 pendingBulkAE = [];
                 await loadAllRecords();
-                await saveAllToCloud();
+                pushRecordsToCloud("aes", records); // fire-and-forget: local import is already done, don't make the user wait on cloud sync
                 closeModal('modalBulkAE');
                 refreshAllViews();
                 showToast(`Bulk Import Complete! Added/Updated ${importCount} AE records.`, "success");
@@ -2045,6 +2100,16 @@
                 pendingBulkTAss = [];
                 let newCount = 0, updateCount = 0, skippedCount = 0;
                 const errors = [];
+
+                // O(1) lookup instead of scanning the full existing/pending arrays for every
+                // row — with hundreds/thousands of rows the old .find()/.findIndex() approach
+                // became quadratic and was the main source of a "hanging" Process Excel step.
+                const existingByKey = new Map();
+                tassRecords.forEach(r => existingByKey.set(
+                    [r.province, r.municipality, r.year, r.month, r.attraction].map(v => String(v ?? '').trim().toLowerCase()).join('||'),
+                    r
+                ));
+                const queuedByKey = new Map();
 
                 for (let i = 1; i < rows.length; i++) {
                     const row = rows[i];
@@ -2088,24 +2153,17 @@
                         grand_total: tm_m + tm_f + om_m + om_f + fcr_m + fcr_f
                     };
 
-                    const existing = tassRecords.find(r =>
-                        r.province.toLowerCase() === record.province.toLowerCase() &&
-                        r.municipality.toLowerCase() === record.municipality.toLowerCase() &&
-                        r.year == record.year &&
-                        r.month == record.month &&
-                        r.attraction.toLowerCase() === record.attraction.toLowerCase()
+                    const existing = existingByKey.get(
+                        [record.province, record.municipality, record.year, record.month, record.attraction]
+                            .map(v => String(v ?? '').trim().toLowerCase()).join('||')
                     );
 
                     // Also check against rows already queued from earlier in THIS SAME file,
                     // so duplicate rows in one upload don't both try to insert as "new"
                     // (which would violate the unique index and silently abort the import).
-                    const queuedIdx = pendingBulkTAss.findIndex(item =>
-                        item.record.province.toLowerCase() === record.province.toLowerCase() &&
-                        item.record.municipality.toLowerCase() === record.municipality.toLowerCase() &&
-                        item.record.year == record.year &&
-                        item.record.month == record.month &&
-                        item.record.attraction.toLowerCase() === record.attraction.toLowerCase()
-                    );
+                    const key = [record.province, record.municipality, record.year, record.month, record.attraction]
+                        .map(v => String(v ?? '').trim().toLowerCase()).join('||');
+                    const queuedIdx = queuedByKey.has(key) ? queuedByKey.get(key) : -1;
 
                     if (queuedIdx !== -1) {
                         pendingBulkTAss[queuedIdx] = existing
@@ -2113,9 +2171,11 @@
                             : { record, isUpdate: false };
                     } else if (existing) {
                         pendingBulkTAss.push({ record, isUpdate: true, existingId: existing.id });
+                        queuedByKey.set(key, pendingBulkTAss.length - 1);
                         updateCount++;
                     } else {
                         pendingBulkTAss.push({ record, isUpdate: false });
+                        queuedByKey.set(key, pendingBulkTAss.length - 1);
                         newCount++;
                     }
                 }
@@ -2166,13 +2226,14 @@
             const importCount = pendingBulkTAss.length;
             try {
                 if (btn) { btn.disabled = true; btn.innerText = 'Importing...'; }
-                for (let item of pendingBulkTAss) {
+                const records = pendingBulkTAss.map(item => {
                     if (item.isUpdate && item.existingId) item.record.id = item.existingId;
-                    await putRecordToStore("tass", item.record);
-                }
+                    return item.record;
+                });
+                await putRecordsToStore("tass", records);
                 pendingBulkTAss = [];
                 await loadAllRecords();
-                await saveAllToCloud();
+                pushRecordsToCloud("tass", records); // fire-and-forget: local import is already done, don't make the user wait on cloud sync
                 closeModal('modalBulkTAss');
                 refreshAllViews();
                 showToast(`Bulk Import Complete! Added/Updated ${importCount} TAss records.`, "success");
