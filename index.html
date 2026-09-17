@@ -1178,22 +1178,6 @@
             }
         }
 
-        async function saveSingleToCloud(type, record) {
-            try {
-                if (!window.cloudDB || !window.cloudFns) return;
-                const { collection, doc, setDoc } = window.cloudFns;
-                const name = type === "aes" ? "tourism_ae_records" : "tourism_tass_records";
-                await setDoc(doc(collection(window.cloudDB, name), cloudDocId(type, record)), {
-                    ...record, localId: record.id ?? null, cloudUpdatedAt: new Date().toISOString()
-                });
-                updateCloudStatus("Cloud Saved");
-            } catch (err) {
-                console.warn("Single-record cloud save failed:", err);
-                showToast("Record saved locally, but cloud save failed.", "warning");
-                updateCloudStatus("Local Only");
-            }
-        }
-
         // Small local queue of cloud doc deletes that failed to go through immediately
         // (e.g. a network blip). This lets "Save to Cloud" clean up stragglers by deleting
         // just those specific docs, instead of downloading and diffing the entire cloud
@@ -1214,21 +1198,6 @@
                 !succeeded.some(s => s.collectionName === p.collectionName && s.cloudId === p.cloudId)
             );
             localStorage.setItem('toaks_pending_cloud_deletes', JSON.stringify(remaining));
-        }
-
-        async function deleteSingleFromCloud(type, record) {
-            const name = type === "aes" ? "tourism_ae_records" : "tourism_tass_records";
-            const cloudId = cloudDocId(type, record);
-            try {
-                if (!window.cloudDB || !window.cloudFns) return;
-                const { collection, doc, deleteDoc } = window.cloudFns;
-                await deleteDoc(doc(collection(window.cloudDB, name), cloudId));
-                updateCloudStatus("Cloud Saved");
-            } catch (err) {
-                console.warn("Cloud delete failed:", err);
-                addPendingCloudDelete(name, cloudId);
-                showToast("Record deleted locally, but cloud delete failed. It will be cleaned up next time you click Save to Cloud.", "warning");
-            }
         }
 
         // Bulk-import cloud push: writes just the given records (chunked batches), without
@@ -1771,10 +1740,6 @@
                 closeModal('modalAE');
                 refreshAEViews();
                 showToast("Accommodation Establishment record saved successfully.", "success");
-                // Cloud sync happens in the background — the record is already durable in
-                // IndexedDB, so the user shouldn't wait on network latency to see "saved".
-                // updateCloudStatus() inside saveSingleToCloud reflects the outcome once it lands.
-                saveSingleToCloud("aes", record);
             } catch (err) {
                 console.error("Save AE record failed:", err);
                 showToast("Failed to save record: " + (err.message || err.name || "Unknown error") + ". This usually means a record with the same Province/Municipality/Year/Month/Establishment already exists.", "danger");
@@ -1811,7 +1776,6 @@
                 await loadAERecords();
                 refreshAEViews();
                 showToast("AE Record deleted.", "info");
-                if (deleted) deleteSingleFromCloud("aes", deleted); // background cloud cleanup
             }
         }
 
@@ -1957,7 +1921,6 @@
                 closeModal('modalTAss');
                 refreshTAssViews();
                 showToast("Same-Day Visitor record saved successfully.", "success");
-                saveSingleToCloud("tass", record); // background cloud sync, see saveAERecord
             } catch (err) {
                 console.error("Save TAss record failed:", err);
                 showToast("Failed to save record: " + (err.message || err.name || "Unknown error") + ". This usually means a record with the same Province/Municipality/Year/Month/Attraction already exists.", "danger");
@@ -1995,7 +1958,6 @@
                 await loadTAssRecords();
                 refreshTAssViews();
                 showToast("TAss Record deleted.", "info");
-                if (deleted) deleteSingleFromCloud("tass", deleted); // background cloud cleanup
             }
         }
 
