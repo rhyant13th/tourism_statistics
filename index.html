@@ -285,7 +285,7 @@
                         <button onclick="openModal('modalBulkAE')" class="bg-navy-700 hover:bg-navy-800 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-file-import"></i> Bulk Upload Excel
                         </button>
-                        <button onclick="exportAEsExcel()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                        <button onclick="openExportPeriodModal('aes')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-file-export"></i> Export Excel
                         </button>
                     </div>
@@ -307,6 +307,9 @@
                         <select id="filterAEType" onchange="renderAETable()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="ALL">All Types/Classes</option></select>
                     </div>
                 </div>
+
+                <!-- Saved Data Status -->
+                <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs text-emerald-900"><div class="flex flex-wrap items-center justify-between gap-3"><div><strong>Saved Tourist Arrivals:</strong> <span id="aeSavedCount">0</span> records</div><div>Latest saved period: <strong id="aeSavedPeriod">None</strong></div></div></div>
 
                 <!-- Table View -->
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -353,7 +356,7 @@
                         <button onclick="openModal('modalBulkTAss')" class="bg-navy-700 hover:bg-navy-800 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-file-import"></i> Bulk Upload Excel
                         </button>
-                        <button onclick="exportTAssExcel()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                        <button onclick="openExportPeriodModal('tass')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-file-export"></i> Export Excel
                         </button>
                     </div>
@@ -376,6 +379,8 @@
                 </div>
 
                 <!-- Table View -->
+                <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs text-emerald-900"><div class="flex flex-wrap items-center justify-between gap-3"><div><strong>Saved Same-Day Visitors:</strong> <span id="tassSavedCount">0</span> records</div><div>Latest saved period: <strong id="tassSavedPeriod">None</strong></div></div></div>
+
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                     <div class="overflow-x-auto custom-scrollbar">
                         <table class="w-full text-left border-collapse text-xs">
@@ -639,6 +644,37 @@
         </main>
     </div>
 
+    <!-- EXPORT PERIOD MODAL -->
+    <div id="modalExportPeriod" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md">
+        <div class="p-5 border-b border-slate-200 flex items-center justify-between"><div><h3 class="font-bold text-slate-800">Export Saved Data to Excel</h3><p class="text-xs text-slate-500">Choose the dataset and reporting period to export.</p></div><button onclick="closeModal('modalExportPeriod')" class="text-slate-400 hover:text-slate-700 text-xl">&times;</button></div>
+        <div class="p-5 space-y-4">
+          <div><label class="block text-xs font-semibold text-slate-600 mb-1">Dataset</label><select id="exportDataset" onchange="updateExportPeriodControls()" class="w-full text-sm bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="aes">Tourist Arrivals – Accommodation Establishments</option><option value="tass">Same-Day Visitors – Tourist Attractions</option></select></div>
+          <div>
+<label class="block text-xs font-semibold text-slate-600 mb-2">Export Scope</label>
+<div class="space-y-2">
+  <label class="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
+    <input type="radio" name="exportScopeRadio" value="MONTH" checked onchange="document.getElementById('exportScope').value='MONTH';updateExportPeriodControls()" class="mt-1">
+    <span><strong class="block text-sm text-slate-800">1. Specific Year + Month</strong><span class="text-xs text-slate-500">Example: 2026 → September. Exports September 2026 only.</span></span>
+  </label>
+  <label class="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
+    <input type="radio" name="exportScopeRadio" value="YEAR" onchange="document.getElementById('exportScope').value='YEAR';updateExportPeriodControls()" class="mt-1">
+    <span><strong class="block text-sm text-slate-800">2. Specific Year + All Months</strong><span class="text-xs text-slate-500">Example: 2026 → All Months. Exports all saved months in 2026.</span></span>
+  </label>
+  <label class="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
+    <input type="radio" name="exportScopeRadio" value="ALL_DATA" onchange="document.getElementById('exportScope').value='ALL_DATA';updateExportPeriodControls()" class="mt-1">
+    <span><strong class="block text-sm text-slate-800">3. All Data</strong><span class="text-xs text-slate-500">Exports all saved years and months in the selected dataset.</span></span>
+  </label>
+</div>
+<select id="exportScope" class="hidden"><option value="MONTH">1</option><option value="YEAR">2</option><option value="ALL_DATA">3</option></select>
+</div>
+          <div class="grid grid-cols-2 gap-3"><div><label class="block text-xs font-semibold text-slate-600 mb-1">Year</label><select id="exportYear" onchange="updateExportPeriodControls()" class="w-full text-sm bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"></select></div><div><label class="block text-xs font-semibold text-slate-600 mb-1">Month</label><select id="exportMonth" onchange="updateExportPeriodControls()" class="w-full text-sm bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="1">January</option><option value="2">February</option><option value="3">March</option><option value="4">April</option><option value="5">May</option><option value="6">June</option><option value="7">July</option><option value="8">August</option><option value="9">September</option><option value="10">October</option><option value="11">November</option><option value="12">December</option></select></div></div>
+          <div id="exportScopeInfo" class="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">Select a scope above. The export will contain only records matching that scope.</div>
+        </div>
+        <div class="p-4 border-t border-slate-200 flex justify-end gap-2"><button onclick="closeModal('modalExportPeriod')" class="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm">Cancel</button><button onclick="exportSelectedPeriodExcel()" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button></div>
+      </div>
+    </div>
+
     <!-- MODAL 1: ADD/EDIT TOURIST ARRIVALS (AE) -->
     <div id="modalAE" class="fixed inset-0 bg-slate-900/60 z-50 hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -821,12 +857,13 @@
             <div class="p-5 overflow-y-auto space-y-4 custom-scrollbar text-xs">
                 <div class="bg-blue-50 border border-blue-200 p-3 rounded-lg text-blue-800 space-y-1">
                     <p class="font-bold"><i class="fa-solid fa-circle-info mr-1"></i> Unique Key Matching Rule:</p>
-                    <p>Records are matched on: <strong>Province + Municipality + Year + Month + Accommodation Establishment</strong>. Existing records will be updated; new ones will be added. Upload only Excel (.xlsx/.xls) files. Use the Excel Template for the correct columns.</p>
+                    <p>Upload the Excel file, click <strong>1. Process Excel</strong> to preview it, then click <strong>2. Save / Replace Data</strong>. The uploaded <strong>Year + Month</strong> will replace the existing period only. All other months and years remain unchanged.</p>
                 </div>
 
                 <div class="flex items-center space-x-3">
                     <input type="file" id="bulkAEFile" accept=".xlsx,.xls" class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100">
-                    <button onclick="processAEBulkExcel()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg font-medium">Process Excel</button> 
+                    <button onclick="processAEBulkExcel()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg font-medium">1. Process Excel</button>
+                    <button id="btnSaveBulkAE" onclick="commitAEBulkImport()" disabled class="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-bold">2. Save / Replace Data</button>
                     <button onclick="downloadAETemplate()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium"><i class="fa-solid fa-file-excel mr-1"></i> Excel Template</button>
                 </div>
 
@@ -859,7 +896,7 @@
             </div>
             <div class="p-3 bg-slate-50 border-t flex justify-end space-x-2">
                 <button onclick="closeModal('modalBulkAE')" class="px-4 py-2 rounded bg-slate-200 text-slate-700 font-medium">Cancel</button>
-                <button id="btnConfirmBulkAE" onclick="commitAEBulkImport()" class="px-4 py-2 rounded bg-teal-600 hover:bg-teal-700 text-white font-medium">Confirm & Import Data</button>
+                <button id="btnConfirmBulkAE" onclick="commitAEBulkImport()" class="px-4 py-2 rounded bg-teal-600 hover:bg-teal-700 text-white font-medium">Save / Replace Data</button>
             </div>
         </div>
     </div>
@@ -874,12 +911,13 @@
             <div class="p-5 overflow-y-auto space-y-4 custom-scrollbar text-xs">
                 <div class="bg-blue-50 border border-blue-200 p-3 rounded-lg text-blue-800 space-y-1">
                     <p class="font-bold"><i class="fa-solid fa-circle-info mr-1"></i> Unique Key Matching Rule:</p>
-                    <p>Records are matched on: <strong>Province + Municipality + Year + Month + Tourist Attraction</strong>. Existing records will be updated; new ones will be added. Upload only Excel (.xlsx/.xls) files. Use the Excel Template for the correct columns.</p>
+                    <p>Upload the Excel file, click <strong>1. Process Excel</strong> to preview it, then click <strong>2. Save / Replace Data</strong>. The uploaded <strong>Year + Month</strong> will replace the existing period only. All other months and years remain unchanged.</p>
                 </div>
 
                 <div class="flex items-center space-x-3">
                     <input type="file" id="bulkTAssFile" accept=".xlsx,.xls" class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100">
-                    <button onclick="processTAssBulkExcel()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg font-medium">Process Excel</button> 
+                    <button onclick="processTAssBulkExcel()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg font-medium">1. Process Excel</button>
+                    <button id="btnSaveBulkTAss" onclick="commitTAssBulkImport()" disabled class="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-bold">2. Save / Replace Data</button>
                     <button onclick="downloadTAssTemplate()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium"><i class="fa-solid fa-file-excel mr-1"></i> Excel Template</button>
                 </div>
 
@@ -913,7 +951,7 @@
             </div>
             <div class="p-3 bg-slate-50 border-t flex justify-end space-x-2">
                 <button onclick="closeModal('modalBulkTAss')" class="px-4 py-2 rounded bg-slate-200 text-slate-700 font-medium">Cancel</button>
-                <button id="btnConfirmBulkTAss" onclick="commitTAssBulkImport()" class="px-4 py-2 rounded bg-teal-600 hover:bg-teal-700 text-white font-medium">Confirm & Import Data</button>
+                <button id="btnConfirmBulkTAss" onclick="commitTAssBulkImport()" class="px-4 py-2 rounded bg-teal-600 hover:bg-teal-700 text-white font-medium">Save / Replace Data</button>
             </div>
         </div>
     </div>
@@ -1049,73 +1087,34 @@
         }
 
 
-        // Replace all records for one or more reporting periods (Year + Month) without rewriting other periods.
+        // Replace the uploaded Year + Month snapshot only.
         function getReportingPeriods(records) {
             const map = new Map();
-            for (const r of records) {
-                const key = `${Number(r.year)}-${Number(r.month)}`;
-                if (!map.has(key)) map.set(key, { year: Number(r.year), month: Number(r.month) });
-            }
-            return Array.from(map.values()).sort((a,b) => a.year - b.year || a.month - b.month);
+            for (const r of records) { const key=`${Number(r.year)}-${Number(r.month)}`; if(!map.has(key)) map.set(key,{year:Number(r.year),month:Number(r.month)}); }
+            return Array.from(map.values()).sort((a,b)=>a.year-b.year||a.month-b.month);
         }
-
-        function formatReportingPeriods(periods) {
-            return periods.map(p => `${MONTH_NAMES[p.month - 1]} ${p.year}`).join(', ');
-        }
-
-        function countRecordsForPeriods(records, periods) {
-            const keys = new Set(periods.map(p => `${p.year}-${p.month}`));
-            return records.filter(r => keys.has(`${Number(r.year)}-${Number(r.month)}`)).length;
-        }
-
-        function replacePeriodsInStore(storeName, records, periods) {
-            return new Promise((resolve, reject) => {
-                if (!db) return reject(new Error('Database is not initialized.'));
-                const periodKeys = new Set(periods.map(p => `${p.year}-${p.month}`));
-                const tx = db.transaction(storeName, 'readwrite');
-                const store = tx.objectStore(storeName);
-                const cursorReq = store.openCursor();
-                const recordsToSave = records.map(r => ({ ...r, id: undefined }));
-
-                cursorReq.onsuccess = function(e) {
-                    const cursor = e.target.result;
-                    if (cursor) {
-                        const value = cursor.value;
-                        const key = `${Number(value.year)}-${Number(value.month)}`;
-                        if (periodKeys.has(key)) cursor.delete();
-                        cursor.continue();
-                    } else {
-                        for (const rec of recordsToSave) {
-                            delete rec.id;
-                            const req = store.add(rec);
-                            req.onsuccess = () => { rec.id = req.result; };
-                        }
-                    }
-                };
-                tx.oncomplete = () => resolve(recordsToSave);
-                tx.onerror = () => reject(tx.error || new Error('Failed to replace reporting period.'));
-                tx.onabort = () => reject(tx.error || new Error('Reporting period replacement was aborted.'));
+        function formatReportingPeriods(periods){return periods.map(p=>`${MONTH_NAMES[p.month-1]} ${p.year}`).join(', ');}
+        function countRecordsForPeriods(records,periods){const keys=new Set(periods.map(p=>`${p.year}-${p.month}`));return records.filter(r=>keys.has(`${Number(r.year)}-${Number(r.month)}`)).length;}
+        function recordUniqueKey(storeName,r){const subject=storeName==='aes'?r.establishment:r.attraction;return [r.province,r.municipality,r.year,r.month,subject].map(v=>String(v??'').trim().toLowerCase()).join('||');}
+        function dedupePendingRecords(storeName,records){const map=new Map();records.forEach(r=>map.set(recordUniqueKey(storeName,r),r));return Array.from(map.values());}
+        function replacePeriodsInStore(storeName,records,periods){
+            return new Promise((resolve,reject)=>{
+                if(!db)return reject(new Error('Database is not initialized.'));
+                const periodKeys=new Set(periods.map(p=>`${p.year}-${p.month}`)); const recordsToSave=dedupePendingRecords(storeName,records);
+                const tx=db.transaction(storeName,'readwrite'); const store=tx.objectStore(storeName); const cursorReq=store.openCursor(); const savedRecords=[]; let transactionError=null;
+                cursorReq.onerror=()=>{transactionError=cursorReq.error||new Error('Unable to read existing records.');try{tx.abort();}catch(_){};};
+                cursorReq.onsuccess=e=>{const cursor=e.target.result;if(cursor){const v=cursor.value;if(periodKeys.has(`${Number(v.year)}-${Number(v.month)}`))cursor.delete();cursor.continue();}else{for(const source of recordsToSave){const rec={...source};delete rec.id;const req=store.add(rec);req.onsuccess=()=>{rec.id=req.result;savedRecords.push(rec);};req.onerror=()=>{transactionError=req.error||new Error('A duplicate record prevented the replacement.');try{tx.abort();}catch(_){};};}}};
+                tx.oncomplete=()=>resolve(savedRecords);tx.onerror=()=>reject(transactionError||tx.error||new Error('Failed to replace reporting period.'));tx.onabort=()=>reject(transactionError||tx.error||new Error('Reporting period replacement was aborted.'));
             });
         }
-
-        async function replaceBulkByReportingPeriod(storeName, inMemoryRecords, pendingItems, label) {
-            const newRecords = pendingItems.map(item => item.record);
-            const periods = getReportingPeriods(newRecords);
-            if (!periods.length) throw new Error('No valid reporting period found in the upload.');
-
-            const existingCount = countRecordsForPeriods(inMemoryRecords, periods);
-            const periodText = formatReportingPeriods(periods);
-            const message = existingCount > 0
-                ? `Existing ${label} data was found for ${periodText}.\n\nThis upload will REPLACE all existing ${label} records for ${periodText}.\n\nRecords for all other months and years will remain unchanged.\n\nContinue?`
-                : `This upload will save ${newRecords.length.toLocaleString()} ${label} records for ${periodText}.\n\nNo other months or years will be changed.\n\nContinue?`;
-
-            if (!confirm(message)) return false;
-
-            const savedRecords = await replacePeriodsInStore(storeName, newRecords, periods);
-            const periodKeys = new Set(periods.map(p => `${p.year}-${p.month}`));
-            const retained = inMemoryRecords.filter(r => !periodKeys.has(`${Number(r.year)}-${Number(r.month)}`));
-            inMemoryRecords.splice(0, inMemoryRecords.length, ...retained, ...savedRecords);
-            return true;
+        async function replaceBulkByReportingPeriod(storeName,inMemoryRecords,pendingItems,label){
+            let newRecords=dedupePendingRecords(storeName,pendingItems.map(item=>item.record)); const periods=getReportingPeriods(newRecords);
+            if(!periods.length)throw new Error('No valid reporting period found in the upload.');
+            if(periods.length>1)throw new Error(`The upload contains ${periods.length} reporting periods (${formatReportingPeriods(periods)}). Please upload one Year + Month per file.`);
+            const existingCount=countRecordsForPeriods(inMemoryRecords,periods), periodText=formatReportingPeriods(periods);
+            const message=existingCount>0?`Existing ${label} data was found for ${periodText}.\n\nThis will REPLACE ALL existing ${label} records for ${periodText}.\n\nOld records: ${existingCount.toLocaleString()}\nNew records: ${newRecords.length.toLocaleString()}\n\nOther months and years will remain unchanged.\n\nContinue?`:`This will save ${newRecords.length.toLocaleString()} ${label} records for ${periodText}.\n\nOther months and years will remain unchanged.\n\nContinue?`;
+            if(!confirm(message))return false;
+            const savedRecords=await replacePeriodsInStore(storeName,newRecords,periods); const periodKeys=new Set(periods.map(p=>`${p.year}-${p.month}`)); const retained=inMemoryRecords.filter(r=>!periodKeys.has(`${Number(r.year)}-${Number(r.month)}`)); inMemoryRecords.splice(0,inMemoryRecords.length,...retained,...savedRecords);return true;
         }
 
         /**
@@ -1180,7 +1179,14 @@
             if (tabId === 'top-tass') renderTopTAssReport();
         }
 
+        function updateSavedDataStatus(){
+            const ae=document.getElementById('aeSavedCount'), ta=document.getElementById('tassSavedCount'); if(ae)ae.textContent=aeRecords.length.toLocaleString(); if(ta)ta.textContent=tassRecords.length.toLocaleString();
+            const latest=records=>{if(!records.length)return 'None';const r=[...records].sort((a,b)=>Number(b.year)-Number(a.year)||Number(b.month)-Number(a.month))[0];return `${MONTH_NAMES[Number(r.month)-1]} ${r.year}`;};
+            const ap=document.getElementById('aeSavedPeriod'),tp=document.getElementById('tassSavedPeriod');if(ap)ap.textContent=latest(aeRecords);if(tp)tp.textContent=latest(tassRecords);
+        }
+
         function refreshAllViews() {
+            updateSavedDataStatus();
             populateFilterOptions();
             refreshDashboard();
             renderAETable();
@@ -1765,6 +1771,8 @@
 
                 const headers = rows[0].map(normalizeExcelHeader);
                 pendingBulkAE = [];
+                document.getElementById('btnSaveBulkAE').disabled = true;
+                document.getElementById('btnConfirmBulkAE').disabled = true;
                 let newCount = 0, updateCount = 0, skippedCount = 0;
                 const errors = [];
 
@@ -1858,6 +1866,7 @@
                     document.getElementById('bulkAEErrorLog').classList.add('hidden');
                 }
                 document.getElementById('btnConfirmBulkAE').disabled = false;
+                document.getElementById('btnSaveBulkAE').disabled = false;
             } catch (err) {
                 console.error(err);
                 showToast("Failed to read Excel file: " + err.message, "danger");
@@ -1874,6 +1883,8 @@
                 const replaced = await replaceBulkByReportingPeriod("aes", aeRecords, pendingBulkAE, "Tourist Arrival");
                 if (!replaced) return;
                 pendingBulkAE = [];
+                document.getElementById('btnSaveBulkAE').disabled = true;
+                document.getElementById('btnConfirmBulkAE').disabled = true;
                 closeModal('modalBulkAE');
                 refreshAllViews();
                 showToast(`Tourist Arrival import complete. ${importCount.toLocaleString()} records saved. Only the uploaded Year/Month period was replaced.`, "success");
@@ -1894,6 +1905,8 @@
 
                 const headers = rows[0].map(normalizeExcelHeader);
                 pendingBulkTAss = [];
+                document.getElementById('btnSaveBulkTAss').disabled = true;
+                document.getElementById('btnConfirmBulkTAss').disabled = true;
                 let newCount = 0, updateCount = 0, skippedCount = 0;
                 const errors = [];
 
@@ -1987,6 +2000,7 @@
                     document.getElementById('bulkTAssErrorLog').classList.add('hidden');
                 }
                 document.getElementById('btnConfirmBulkTAss').disabled = false;
+                document.getElementById('btnSaveBulkTAss').disabled = false;
             } catch (err) {
                 console.error(err);
                 showToast("Failed to read Excel file: " + err.message, "danger");
@@ -2003,6 +2017,8 @@
                 const replaced = await replaceBulkByReportingPeriod("tass", tassRecords, pendingBulkTAss, "Same-Day Visitor");
                 if (!replaced) return;
                 pendingBulkTAss = [];
+                document.getElementById('btnSaveBulkTAss').disabled = true;
+                document.getElementById('btnConfirmBulkTAss').disabled = true;
                 closeModal('modalBulkTAss');
                 refreshAllViews();
                 showToast(`Same-Day Visitor import complete. ${importCount.toLocaleString()} records saved. Only the uploaded Year/Month period was replaced.`, "success");
@@ -2328,36 +2344,12 @@
             XLSX.writeFile(workbook, fileName, { bookType: 'xlsx', compression: true });
         }
 
-        function exportAEsExcel() {
-            if (!aeRecords.length) { showToast("No AE records to export.", "warning"); return; }
-            const headers = ["Province","Municipality","Year","Month","Accommodation Establishment","Type Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total (L+F+Overseas)","Total Male","Total Female","Total (M+F)"];
-            const rows = aeRecords.map(r => [
-                r.province, r.municipality, r.year, MONTH_NAMES[r.month-1], r.establishment, r.type_class || '',
-                Number(r.local_tourist||0), Number(r.foreign_tourist||0), Number(r.overseas_filipino||0),
-                Number(r.local_tourist||0)+Number(r.foreign_tourist||0)+Number(r.overseas_filipino||0),
-                Number(r.total_male||0), Number(r.total_female||0), Number(r.total_mf||0)
-            ]);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers, rows, [2,6,7,8,9,10,11,12]), "AEs Data");
-            XLSX.utils.book_append_sheet(wb, makeInfoSheet("Tourist Arrivals – Accommodation Establishments (AEs)", "Provincial & Municipal Tourism Statistics Portal"), "Info");
-            saveWorkbook(wb, `Tourist_Arrivals_AEs_${new Date().toISOString().slice(0,10)}.xlsx`);
-        }
-
-        function exportTAssExcel() {
-            if (!tassRecords.length) { showToast("No TAss records to export.", "warning"); return; }
-            const headers = ["Province","Municipality","Year","Month","Tourist Attraction","TM(M)","TM(F)","TM(SUM)","OM(M)","OM(F)","OM(SUM)","FCR(M)","FCR(F)","FCR(SUM)","Total Male","Total Female","Grand Total"];
-            const rows = tassRecords.map(r => [
-                r.province, r.municipality, r.year, MONTH_NAMES[r.month-1], r.attraction,
-                Number(r.tm_m||0), Number(r.tm_f||0), Number(r.tm_sum||0),
-                Number(r.om_m||0), Number(r.om_f||0), Number(r.om_sum||0),
-                Number(r.fcr_m||0), Number(r.fcr_f||0), Number(r.fcr_sum||0),
-                Number(r.total_male||0), Number(r.total_female||0), Number(r.grand_total||0)
-            ]);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers, rows, [2,5,6,7,8,9,10,11,12,13,14,15,16]), "TAss Data");
-            XLSX.utils.book_append_sheet(wb, makeInfoSheet("Same-Day Visitors – Tourist Attraction Arrivals (TAss)", "Provincial & Municipal Tourism Statistics Portal"), "Info");
-            saveWorkbook(wb, `SameDay_Visitors_TAss_${new Date().toISOString().slice(0,10)}.xlsx`);
-        }
+        function openExportPeriodModal(dataset){document.getElementById('exportDataset').value=dataset||'aes';document.getElementById('exportScope').value='MONTH';document.querySelectorAll('input[name=exportScopeRadio]').forEach(r=>r.checked=(r.value==='MONTH'));populateExportYears();updateExportPeriodControls();const el=document.getElementById('modalExportPeriod');el.classList.remove('hidden');el.classList.add('flex');}
+        function populateExportYears(){const data=document.getElementById('exportDataset').value==='tass'?tassRecords:aeRecords;const years=[...new Set(data.map(r=>Number(r.year)).filter(Boolean))].sort((a,b)=>b-a);const sel=document.getElementById('exportYear');const cur=sel.value;sel.innerHTML=years.map(y=>`<option value="${y}">${y}</option>`).join('');if(cur && years.includes(Number(cur)))sel.value=cur;else if(years.length)sel.value=String(years[0]);else sel.innerHTML='<option value="">No saved year</option>';}
+        function updateExportPeriodControls(){const scope=document.getElementById('exportScope').value;const year=document.getElementById('exportYear');const month=document.getElementById('exportMonth');const info=document.getElementById('exportScopeInfo');const yearDisabled=scope==='ALL_DATA';const monthDisabled=scope!=='MONTH';year.disabled=yearDisabled;month.disabled=monthDisabled;year.classList.toggle('opacity-50',yearDisabled);month.classList.toggle('opacity-50',monthDisabled);if(scope==='YEAR')month.value='1';if(scope==='ALL_DATA'){info.innerHTML='<strong>3. All Data:</strong> exports every saved year and month in the selected dataset.';}else if(scope==='YEAR'){info.innerHTML='<strong>2. Specific Year + All Months:</strong> exports January–December for the selected year.';}else{info.innerHTML='<strong>1. Specific Year + Month:</strong> exports only the selected month of the selected year.';}}
+        function exportSelectedPeriodExcel(){const dataset=document.getElementById('exportDataset').value,scope=document.getElementById('exportScope').value,yearValue=document.getElementById('exportYear').value,mv=document.getElementById('exportMonth').value;if(scope==='ALL_DATA'){if(dataset==='aes')exportAEsExcel(null,'ALL');else exportTAssExcel(null,'ALL');closeModal('modalExportPeriod');return;}const year=Number(yearValue);if(!year){showToast('No saved year is available to export.','warning');return;}const month=scope==='YEAR'?'ALL':Number(mv);if(dataset==='aes')exportAEsExcel(year,month);else exportTAssExcel(year,month);closeModal('modalExportPeriod');}
+        function exportAEsExcel(year=null,month='ALL'){const source=year==null?aeRecords:aeRecords.filter(r=>Number(r.year)===Number(year)&&(month==='ALL'||Number(r.month)===Number(month)));if(!source.length){showToast('No Tourist Arrival records match the selected period.','warning');return;}const headers=["Province","Municipality","Year","Month","Accommodation Establishment","Type Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total (L+F+Overseas)","Total Male","Total Female","Total (M+F)"];const rows=source.map(r=>[r.province,r.municipality,r.year,MONTH_NAMES[r.month-1],r.establishment,r.type_class||'',Number(r.local_tourist||0),Number(r.foreign_tourist||0),Number(r.overseas_filipino||0),Number(r.local_tourist||0)+Number(r.foreign_tourist||0)+Number(r.overseas_filipino||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.total_mf||0)]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,makeDataSheet(headers,rows,[2,6,7,8,9,10,11,12]),'AEs Data');XLSX.utils.book_append_sheet(wb,makeInfoSheet('Tourist Arrivals – Accommodation Establishments (AEs)',`Export period: ${year==null?'All Saved Data':`${year} - ${month==='ALL'?'All Months':MONTH_NAMES[month-1]}`}`),'Info');saveWorkbook(wb,`Tourist_Arrivals_AEs_${year==null?'All_Data':`${year}_${month==='ALL'?'All_Months':MONTH_NAMES[month-1]}`}.xlsx`);}
+        function exportTAssExcel(year=null,month='ALL'){const source=year==null?tassRecords:tassRecords.filter(r=>Number(r.year)===Number(year)&&(month==='ALL'||Number(r.month)===Number(month)));if(!source.length){showToast('No Same-Day Visitor records match the selected period.','warning');return;}const headers=["Province","Municipality","Year","Month","Tourist Attraction","TM(M)","TM(F)","TM(SUM)","OM(M)","OM(F)","OM(SUM)","FCR(M)","FCR(F)","FCR(SUM)","Total Male","Total Female","Grand Total"];const rows=source.map(r=>[r.province,r.municipality,r.year,MONTH_NAMES[r.month-1],r.attraction,Number(r.tm_m||0),Number(r.tm_f||0),Number(r.tm_sum||0),Number(r.om_m||0),Number(r.om_f||0),Number(r.om_sum||0),Number(r.fcr_m||0),Number(r.fcr_f||0),Number(r.fcr_sum||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.grand_total||0)]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,makeDataSheet(headers,rows,[2,5,6,7,8,9,10,11,12,13,14,15,16]),'TAss Data');XLSX.utils.book_append_sheet(wb,makeInfoSheet('Same-Day Visitors – Tourist Attraction Arrivals (TAss)',`Export period: ${year==null?'All Saved Data':`${year} - ${month==='ALL'?'All Months':MONTH_NAMES[month-1]}`}`),'Info');saveWorkbook(wb,`SameDay_Visitors_TAss_${year==null?'All_Data':`${year}_${month==='ALL'?'All_Months':MONTH_NAMES[month-1]}`}.xlsx`);}
 
         function makeInfoSheet(title, subtitle) {
             const ws = XLSX.utils.aoa_to_sheet([
@@ -2587,9 +2579,7 @@
             document.getElementById(modalId).classList.remove('hidden');
         }
 
-        function closeModal(modalId) {
-            document.getElementById(modalId).classList.add('hidden');
-        }
+        function closeModal(modalId) { const el=document.getElementById(modalId); if(!el)return; el.classList.add('hidden'); el.classList.remove('flex'); }
 
         function downloadFile(content, fileName, mimeType) {
             const blob = new Blob([content], { type: mimeType });
