@@ -1166,23 +1166,44 @@
             try {
                 if (!window.cloudDB || !window.cloudFns) throw new Error("Cloud database is not available.");
                 await loadAllRecords();
-                const { collection, doc, writeBatch } = window.cloudFns;
+                const { collection, doc, getDocs, writeBatch } = window.cloudFns;
                 const ops = [];
+
+                const localAEIds = new Set(aeRecords.map(r => cloudDocId("aes", r)));
+                const localTAssIds = new Set(tassRecords.map(r => cloudDocId("tass", r)));
+
                 aeRecords.forEach(r => ops.push({
+                    type: 'set',
                     ref: doc(collection(window.cloudDB, "tourism_ae_records"), cloudDocId("aes", r)),
                     data: { ...r, localId: r.id ?? null, cloudUpdatedAt: new Date().toISOString() }
                 }));
                 tassRecords.forEach(r => ops.push({
+                    type: 'set',
                     ref: doc(collection(window.cloudDB, "tourism_tass_records"), cloudDocId("tass", r)),
                     data: { ...r, localId: r.id ?? null, cloudUpdatedAt: new Date().toISOString() }
                 }));
+
+                // Reconcile: remove any cloud docs that no longer correspond to a local record
+                // (e.g. records that were deleted locally but whose cloud delete never went through).
+                let deleteCount = 0;
+                const [aeSnap, tassSnap] = await Promise.all([
+                    getDocs(collection(window.cloudDB, "tourism_ae_records")),
+                    getDocs(collection(window.cloudDB, "tourism_tass_records"))
+                ]);
+                aeSnap.docs.forEach(d => {
+                    if (!localAEIds.has(d.id)) { ops.push({ type: 'delete', ref: d.ref }); deleteCount++; }
+                });
+                tassSnap.docs.forEach(d => {
+                    if (!localTAssIds.has(d.id)) { ops.push({ type: 'delete', ref: d.ref }); deleteCount++; }
+                });
+
                 for (let i = 0; i < ops.length; i += 450) {
                     const batch = writeBatch(window.cloudDB);
-                    ops.slice(i, i + 450).forEach(op => batch.set(op.ref, op.data));
+                    ops.slice(i, i + 450).forEach(op => op.type === 'delete' ? batch.delete(op.ref) : batch.set(op.ref, op.data));
                     await batch.commit();
                 }
                 updateCloudStatus("Cloud Saved");
-                showToast(`Cloud save complete: ${ops.length} records saved.`, "success");
+                showToast(`Cloud save complete: ${ops.length - deleteCount} records saved${deleteCount ? `, ${deleteCount} stale cloud record(s) removed` : ''}.`, "success");
             } catch (err) {
                 console.error("Cloud save failed:", err);
                 const msg = err.code === "permission-denied"
