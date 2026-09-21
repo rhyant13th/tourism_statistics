@@ -2138,7 +2138,61 @@
             return fallbackIndex >= 0 ? row[fallbackIndex] : "";
         }
 
+        // Returns a value only if one of the given headers is actually present
+        // in the sheet (unlike rowValue, never falls back to a bare column
+        // position) - used for optional cross-check columns like SUM/Total
+        // fields that may or may not be present in the uploaded file.
+        function rowValueIfPresent(row, headers, aliases) {
+            for (const alias of aliases) {
+                const idx = headers.indexOf(normalizeExcelHeader(alias));
+                if (idx !== -1) return { present: true, value: row[idx] };
+            }
+            return { present: false, value: undefined };
+        }
+
+        /**
+         * MONTH PARSING
+         * Accepts numeric months 1-12 directly (no manual conversion needed),
+         * and also accepts month names ("January", "Jan", etc.) which are
+         * converted to their numeric equivalent. The value stored in the
+         * database is always the plain number 1-12.
+         */
+        function parseMonthCell(value) {
+            if (value === null || value === undefined || value === "") return 0;
+            const numeric = Number(value);
+            if (!isNaN(numeric) && Number.isFinite(numeric)) {
+                const m = Math.trunc(numeric);
+                return (m >= 1 && m <= 12) ? m : 0;
+            }
+            const text = String(value).trim().toLowerCase();
+            let idx = MONTH_NAMES.findIndex(m => m.toLowerCase() === text);
+            if (idx === -1) idx = MONTH_NAMES.findIndex(m => m.toLowerCase().startsWith(text));
+            return idx !== -1 ? idx + 1 : 0;
+        }
+
+        /**
+         * YEAR PARSING
+         * Stored as a plain four-digit number (e.g. 2026) - never converted
+         * into a date/serial value.
+         */
+        function parseYearCell(value) {
+            const yr = Math.trunc(Number(value));
+            return (Number.isFinite(yr) && yr >= 2000 && yr <= 2099) ? yr : 0;
+        }
+
         // Process AE Bulk Excel
+        //
+        // TOURIST ARRIVALS EXCEL UPLOAD FORMAT - exact expected columns:
+        // Province/HUC/ICC | Municipality/City | Year | Month | Accommodation
+        // Establishment | Type-Class | Local Tourist | Foreign Tourist |
+        // Overseas Filipino | Total (L+F) | Total Male | Total Female |
+        // Total (M+F)
+        // Month accepts numeric 1-12 or a month name (auto-converted to
+        // numeric). Year is stored as a plain 4-digit number. The Total
+        // columns are recalculated by the system from the component columns
+        // to guarantee they're always internally consistent; if the upload
+        // includes its own totals, they're cross-checked and any mismatch is
+        // reported as a warning rather than silently overwritten.
         async function processAEBulkExcel() {
             const fileInput = document.getElementById('bulkAEFile');
             if (!fileInput.files.length) { showToast("Please select an Excel file.", "warning"); return; }
@@ -2158,27 +2212,38 @@
                     const row = rows[i];
                     if (!row || row.every(v => String(v ?? '').trim() === '')) continue;
 
-                    const prov = rowValue(row, headers, ['Province', 'Province/HUC/ICC'], 0) || 'Occidental Mindoro';
-                    const muni = rowValue(row, headers, ['Municipality', 'Municipality/City'], 1);
-                    const yr = parseInt(rowValue(row, headers, ['Year'], 2));
-                    let mo = rowValue(row, headers, ['Month'], 3);
+                    const prov = rowValue(row, headers, ['Province/HUC/ICC', 'Province'], 0) || 'Occidental Mindoro';
+                    const muni = rowValue(row, headers, ['Municipality/City', 'Municipality'], 1);
+                    const yr = parseYearCell(rowValue(row, headers, ['Year'], 2));
+                    const mo = parseMonthCell(rowValue(row, headers, ['Month'], 3));
                     const est = rowValue(row, headers, ['Accommodation Establishment', 'Establishment'], 4);
-                    const type = rowValue(row, headers, ['Type Class', 'Type-Class', 'Type/Class'], 5) || 'General';
+                    const type = rowValue(row, headers, ['Type-Class', 'Type Class', 'Type/Class'], 5) || 'General';
                     const local = parseInt(rowValue(row, headers, ['Local Tourist', 'Local'], 6)) || 0;
                     const foreign = parseInt(rowValue(row, headers, ['Foreign Tourist', 'Foreign'], 7)) || 0;
                     const overseas = parseInt(rowValue(row, headers, ['Overseas Filipino', 'Overseas'], 8)) || 0;
-                    const male = parseInt(rowValue(row, headers, ['Total Male', 'Male'], 9)) || 0;
-                    const female = parseInt(rowValue(row, headers, ['Total Female', 'Female'], 10)) || 0;
+                    const male = parseInt(rowValue(row, headers, ['Total Male', 'Male'], 10)) || 0;
+                    const female = parseInt(rowValue(row, headers, ['Total Female', 'Female'], 11)) || 0;
 
-                    if (isNaN(mo)) {
-                        const mIndex = MONTH_NAMES.findIndex(m => m.toLowerCase().startsWith(String(mo).toLowerCase()));
-                        mo = mIndex !== -1 ? mIndex + 1 : 0;
-                    } else mo = parseInt(mo);
-
-                    if (!muni || !yr || !mo || mo < 1 || mo > 12 || !est) {
-                        errors.push(`Row ${i+1}: Missing/invalid Municipality, Year, Month, or Establishment.`);
+                    if (!muni || !yr || !mo || !est) {
+                        errors.push(`Row ${i+1}: Missing/invalid Municipality/City, Year (must be a 4-digit year), Month (1-12 or a month name), or Accommodation Establishment.`);
                         skippedCount++;
                         continue;
+                    }
+
+                    const total_lf = local + foreign + overseas;
+                    const total_mf = male + female;
+
+                    // Optional cross-check: if the sheet already provides its
+                    // own totals, flag any mismatch instead of silently
+                    // discarding it - the stored value is still the
+                    // recalculated one, kept guaranteed self-consistent.
+                    const uploadedLF = rowValueIfPresent(row, headers, ['Total (L+F)', 'Total(L+F)', 'Total L+F']);
+                    if (uploadedLF.present && Number(uploadedLF.value) !== total_lf) {
+                        errors.push(`Row ${i+1}: Uploaded "Total (L+F)" (${uploadedLF.value}) does not match Local+Foreign+Overseas (${total_lf}). Recalculated value was used.`);
+                    }
+                    const uploadedMF = rowValueIfPresent(row, headers, ['Total (M+F)', 'Total(M+F)', 'Total M+F']);
+                    if (uploadedMF.present && Number(uploadedMF.value) !== total_mf) {
+                        errors.push(`Row ${i+1}: Uploaded "Total (M+F)" (${uploadedMF.value}) does not match Male+Female (${total_mf}). Recalculated value was used.`);
                     }
 
                     const record = {
@@ -2191,10 +2256,10 @@
                         local_tourist: local,
                         foreign_tourist: foreign,
                         overseas_filipino: overseas,
-                        total_lf: local + foreign + overseas,
+                        total_lf: total_lf,
                         total_male: male,
                         total_female: female,
-                        total_mf: male + female
+                        total_mf: total_mf
                     };
 
                     const existing = aeRecords.find(r =>
@@ -2273,6 +2338,17 @@
         }
 
         // Process TAss Bulk Excel
+        //
+        // ATTRACTION / SAME-DAY VISITOR EXCEL UPLOAD FORMAT - exact expected
+        // columns: Province/HUC/ICC | Municipality/City | Year | Month |
+        // Tourist Attraction | TM(M) | TM(F) | TM(SUM) | OM(M) | OM(F) |
+        // OM(SUM) | FCR(M) | FCR(F) | FCR(SUM) | Total Male | Total Female |
+        // Grand Total
+        // Month/Year follow the same rules as the Tourist Arrivals upload.
+        // TM(SUM)/OM(SUM)/FCR(SUM)/Total Male/Total Female/Grand Total are
+        // recalculated by the system from the M/F component columns so they
+        // stay internally consistent; if present in the upload they're
+        // cross-checked and any mismatch is reported as a warning.
         async function processTAssBulkExcel() {
             const fileInput = document.getElementById('bulkTAssFile');
             if (!fileInput.files.length) { showToast("Please select an Excel file.", "warning"); return; }
@@ -2292,29 +2368,46 @@
                     const row = rows[i];
                     if (!row || row.every(v => String(v ?? '').trim() === '')) continue;
 
-                    const prov = rowValue(row, headers, ['Province', 'Province/HUC/ICC'], 0) || 'Occidental Mindoro';
-                    const muni = rowValue(row, headers, ['Municipality', 'Municipality/City'], 1);
-                    const yr = parseInt(rowValue(row, headers, ['Year'], 2));
-                    let mo = rowValue(row, headers, ['Month'], 3);
+                    const prov = rowValue(row, headers, ['Province/HUC/ICC', 'Province'], 0) || 'Occidental Mindoro';
+                    const muni = rowValue(row, headers, ['Municipality/City', 'Municipality'], 1);
+                    const yr = parseYearCell(rowValue(row, headers, ['Year'], 2));
+                    const mo = parseMonthCell(rowValue(row, headers, ['Month'], 3));
                     const attr = rowValue(row, headers, ['Tourist Attraction', 'Attraction'], 4);
 
-                    const tm_m = parseInt(rowValue(row, headers, ['TM(M)', 'Male TM(M)', 'TM Male'], 5)) || 0;
-                    const tm_f = parseInt(rowValue(row, headers, ['TM(F)', 'Female TM(F)', 'TM Female'], 6)) || 0;
-                    const om_m = parseInt(rowValue(row, headers, ['OM(M)', 'Male OM(M)', 'OM Male'], 7)) || 0;
-                    const om_f = parseInt(rowValue(row, headers, ['OM(F)', 'Female OM(F)', 'OM Female'], 8)) || 0;
-                    const fcr_m = parseInt(rowValue(row, headers, ['FCR(M)', 'Male FCR(M)', 'FCR Male'], 9)) || 0;
-                    const fcr_f = parseInt(rowValue(row, headers, ['FCR(F)', 'Female FCR(F)', 'FCR Female'], 10)) || 0;
+                    const tm_m = parseInt(rowValue(row, headers, ['TM(M)', 'TM Male'], 5)) || 0;
+                    const tm_f = parseInt(rowValue(row, headers, ['TM(F)', 'TM Female'], 6)) || 0;
+                    const om_m = parseInt(rowValue(row, headers, ['OM(M)', 'OM Male'], 8)) || 0;
+                    const om_f = parseInt(rowValue(row, headers, ['OM(F)', 'OM Female'], 9)) || 0;
+                    const fcr_m = parseInt(rowValue(row, headers, ['FCR(M)', 'FCR Male'], 11)) || 0;
+                    const fcr_f = parseInt(rowValue(row, headers, ['FCR(F)', 'FCR Female'], 12)) || 0;
 
-                    if (isNaN(mo)) {
-                        const mIndex = MONTH_NAMES.findIndex(m => m.toLowerCase().startsWith(String(mo).toLowerCase()));
-                        mo = mIndex !== -1 ? mIndex + 1 : 0;
-                    } else mo = parseInt(mo);
-
-                    if (!muni || !yr || !mo || mo < 1 || mo > 12 || !attr) {
-                        errors.push(`Row ${i+1}: Missing/invalid Municipality, Year, Month, or Tourist Attraction.`);
+                    if (!muni || !yr || !mo || !attr) {
+                        errors.push(`Row ${i+1}: Missing/invalid Municipality/City, Year (must be a 4-digit year), Month (1-12 or a month name), or Tourist Attraction.`);
                         skippedCount++;
                         continue;
                     }
+
+                    const tm_sum = tm_m + tm_f, om_sum = om_m + om_f, fcr_sum = fcr_m + fcr_f;
+                    const total_male = tm_m + om_m + fcr_m, total_female = tm_f + om_f + fcr_f;
+                    const grand_total = total_male + total_female;
+
+                    // Optional cross-checks against any totals already present
+                    // in the uploaded sheet - the recalculated value is what's
+                    // stored, but a mismatch is surfaced as a warning.
+                    const checks = [
+                        [['TM(SUM)', 'TM Sum'], tm_sum, 'TM(SUM)'],
+                        [['OM(SUM)', 'OM Sum'], om_sum, 'OM(SUM)'],
+                        [['FCR(SUM)', 'FCR Sum'], fcr_sum, 'FCR(SUM)'],
+                        [['Total Male'], total_male, 'Total Male'],
+                        [['Total Female'], total_female, 'Total Female'],
+                        [['Grand Total'], grand_total, 'Grand Total']
+                    ];
+                    checks.forEach(([aliases, computed, label]) => {
+                        const found = rowValueIfPresent(row, headers, aliases);
+                        if (found.present && Number(found.value) !== computed) {
+                            errors.push(`Row ${i+1}: Uploaded "${label}" (${found.value}) does not match the computed value (${computed}). Recalculated value was used.`);
+                        }
+                    });
 
                     const record = {
                         province: String(prov).trim(),
@@ -2322,12 +2415,12 @@
                         year: yr,
                         month: mo,
                         attraction: String(attr).trim(),
-                        tm_m, tm_f, tm_sum: tm_m + tm_f,
-                        om_m, om_f, om_sum: om_m + om_f,
-                        fcr_m, fcr_f, fcr_sum: fcr_m + fcr_f,
-                        total_male: tm_m + om_m + fcr_m,
-                        total_female: tm_f + om_f + fcr_f,
-                        grand_total: tm_m + tm_f + om_m + om_f + fcr_m + fcr_f
+                        tm_m, tm_f, tm_sum,
+                        om_m, om_f, om_sum,
+                        fcr_m, fcr_f, fcr_sum,
+                        total_male,
+                        total_female,
+                        grand_total
                     };
 
                     const existing = tassRecords.find(r =>
@@ -2825,20 +2918,20 @@
         }
 
         function downloadAETemplate() {
-            const headers = ["Province","Municipality","Year","Month","Accommodation Establishment","Type Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total Male","Total Female"];
-            const sample = ["Occidental Mindoro","Mamburao",2026,"January","Sample Establishment","Hotel",0,0,0,0,0];
+            const headers = ["Province/HUC/ICC","Municipality/City","Year","Month","Accommodation Establishment","Type-Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total (L+F)","Total Male","Total Female","Total (M+F)"];
+            const sample = ["Occidental Mindoro","Mamburao",2026,1,"Sample Establishment","Hotel",0,0,0,0,0,0,0];
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers,[sample],[2,6,7,8,9,10]),"AEs Data");
-            XLSX.utils.book_append_sheet(wb, makeInfoSheet("AEs Excel Upload Template","Enter one record per row. Total columns are calculated by the system; do not enter formulas for totals."),"Instructions");
+            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers,[sample],[2,6,7,8,9,10,11,12]),"AEs Data");
+            XLSX.utils.book_append_sheet(wb, makeInfoSheet("AEs Excel Upload Template","Enter one record per row. Month must be numeric (January=1 ... December=12); month names are also accepted. Year must be a 4-digit number. Total (L+F) and Total (M+F) are recalculated by the system - you may leave them blank or fill them in for reference, but do not enter formulas."),"Instructions");
             saveWorkbook(wb, "Tourism_AEs_Excel_Upload_Template.xlsx");
         }
 
         function downloadTAssTemplate() {
-            const headers = ["Province","Municipality","Year","Month","Tourist Attraction","TM(M)","TM(F)","OM(M)","OM(F)","FCR(M)","FCR(F)"];
-            const sample = ["Occidental Mindoro","Mamburao",2026,"January","Sample Attraction",0,0,0,0,0,0];
+            const headers = ["Province/HUC/ICC","Municipality/City","Year","Month","Tourist Attraction","TM(M)","TM(F)","TM(SUM)","OM(M)","OM(F)","OM(SUM)","FCR(M)","FCR(F)","FCR(SUM)","Total Male","Total Female","Grand Total"];
+            const sample = ["Occidental Mindoro","Mamburao",2026,1,"Sample Attraction",0,0,0,0,0,0,0,0,0,0,0,0];
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers,[sample],[2,5,6,7,8,9,10]),"TAss Data");
-            XLSX.utils.book_append_sheet(wb, makeInfoSheet("TAss Excel Upload Template","Enter one record per row. SUM and total columns are calculated by the system; do not enter formulas for totals."),"Instructions");
+            XLSX.utils.book_append_sheet(wb, makeDataSheet(headers,[sample],[2,5,6,7,8,9,10,11,12,13,14,15,16]),"TAss Data");
+            XLSX.utils.book_append_sheet(wb, makeInfoSheet("TAss Excel Upload Template","Enter one record per row. Month must be numeric (January=1 ... December=12); month names are also accepted. Year must be a 4-digit number. SUM/Total/Grand Total columns are recalculated by the system - you may leave them blank or fill them in for reference, but do not enter formulas."),"Instructions");
             saveWorkbook(wb, "Tourism_TAss_Excel_Upload_Template.xlsx");
         }
 
