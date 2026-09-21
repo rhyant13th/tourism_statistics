@@ -46,6 +46,9 @@
       getFirestore, collection, getDocs, getDoc, doc, setDoc, deleteDoc, writeBatch,
       query, where
     } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import {
+      getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyAzEmPXSJs2i1OZqTkwE1cSOR7GQ0gUDFo",
@@ -60,15 +63,55 @@
     const app = initializeApp(firebaseConfig);
     const analytics = getAnalytics(app);
     const cloudDB = getFirestore(app);
+    const auth = getAuth(app);
 
-    // Expose Firestore to the main application script. The promise makes sure
-    // the app waits for Firebase to finish loading before attempting cloud sync.
+    // Expose Firestore + Auth to the main application script.
     window.cloudDB = cloudDB;
     window.cloudFns = { collection, getDocs, getDoc, doc, setDoc, deleteDoc, writeBatch, query, where };
+    window.firebaseAuth = auth;
+    window.firebaseAuthFns = { signInWithEmailAndPassword, signOut, onAuthStateChanged };
     window.cloudReadyPromise = Promise.resolve(true);
   </script>
 </head>
 <body class="bg-slate-100 font-sans text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- LOGIN OVERLAY (shown until user signs in) -->
+    <div id="loginOverlay" class="fixed inset-0 z-[100] bg-slate-900/95 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
+            <div class="flex items-center space-x-3 mb-6">
+                <div class="p-2.5 bg-teal-600 rounded-lg">
+                    <i class="fa-solid fa-chart-line text-xl text-white"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg text-slate-800 leading-tight">Tourism Data Banking System</h1>
+                    <p class="text-xs text-teal-600 font-medium">Sign in to continue</p>
+                </div>
+            </div>
+            <form id="loginForm" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Email</label>
+                    <input type="email" id="loginEmail" required autocomplete="email"
+                        class="w-full text-sm bg-slate-50 border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                        placeholder="your@email.com">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Password</label>
+                    <input type="password" id="loginPassword" required autocomplete="current-password"
+                        class="w-full text-sm bg-slate-50 border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                        placeholder="••••••••">
+                </div>
+                <div id="loginError" class="hidden text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2"></div>
+                <button type="submit" id="loginSubmitBtn"
+                    class="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold text-sm py-2.5 rounded-lg transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-right-to-bracket"></i> Sign in
+                </button>
+            </form>
+            <p class="text-[11px] text-slate-400 mt-5 text-center">Provincial Tourism Office · Occidental Mindoro</p>
+        </div>
+    </div>
+
+    <!-- APP SHELL (hidden until authenticated) -->
+    <div id="appShell" class="hidden flex-1 flex flex-col min-h-screen">
 
     <!-- Top Header -->
     <header class="bg-navy-900 text-white shadow-md sticky top-0 z-30 no-print">
@@ -82,20 +125,26 @@
                         <i class="fa-solid fa-chart-line text-lg text-white"></i>
                     </div>
                     <div>
-                        <h1 class="font-bold text-lg leading-tight">Tourism Data Banking System by: Ryan R. Tajonera TOO II</h1>
+                        <h1 class="font-bold text-lg leading-tight">Tourism Data Banking System</h1>
                         <p class="text-xs text-teal-400 font-medium">Provincial & Municipal Tourism Statistics Portal</p>
                     </div>
                 </div>
             </div>
             <div class="flex items-center space-x-3 text-xs md:text-sm">
+                <span id="userRoleBadge" class="hidden sm:inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-700 text-slate-200">
+                    —
+                </span>
                 <span id="dbStatusBadge" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-900 text-amber-200">
                     <span class="w-2 h-2 mr-1.5 bg-amber-400 rounded-full animate-pulse"></span> Connecting to Cloud...
                 </span>
-                <button id="btnSaveCloud" onclick="saveAllToCloud()" class="bg-teal-700 hover:bg-teal-600 text-white px-3 py-1.5 rounded-lg border border-teal-600 transition flex items-center gap-1.5 text-xs">
+                <button id="btnSaveCloud" onclick="saveAllToCloud()" class="admin-only bg-teal-700 hover:bg-teal-600 text-white px-3 py-1.5 rounded-lg border border-teal-600 transition flex items-center gap-1.5 text-xs">
                     <i class="fa-solid fa-cloud-arrow-up"></i> <span class="hidden sm:inline">Save to Cloud</span>
                 </button>
                 <button id="btnQuickBackup" onclick="exportBackupExcel()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5 text-xs">
                     <i class="fa-solid fa-download"></i> <span class="hidden sm:inline">Quick Backup</span>
+                </button>
+                <button id="btnLogout" onclick="handleLogout()" class="bg-slate-800 hover:bg-rose-700 text-slate-200 hover:text-white px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5 text-xs">
+                    <i class="fa-solid fa-right-from-bracket"></i> <span class="hidden sm:inline">Sign out</span>
                 </button>
             </div>
         </div>
@@ -293,10 +342,10 @@
                         <p class="text-xs text-slate-500">Manage, record, and import stayover visitor statistics.</p>
                     </div>
                     <div class="flex flex-wrap gap-2">
-                        <button onclick="openModal('modalAE')" class="bg-teal-600 hover:bg-teal-700 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                        <button onclick="openModal('modalAE')" class="admin-only bg-teal-600 hover:bg-teal-700 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-plus"></i> Add Single Record
                         </button>
-                        <button onclick="openModal('modalBulkAE')" class="bg-navy-700 hover:bg-navy-800 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                        <button onclick="openModal('modalBulkAE')" class="admin-only bg-navy-700 hover:bg-navy-800 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-file-import"></i> Bulk Upload Excel
                         </button>
                         <button onclick="openExportPeriodModal('aes')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
@@ -364,10 +413,10 @@
                         <p class="text-xs text-slate-500">Manage, record, and import excursionist and day-visitor statistics.</p>
                     </div>
                     <div class="flex flex-wrap gap-2">
-                        <button onclick="openModal('modalTAss')" class="bg-teal-600 hover:bg-teal-700 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                        <button onclick="openModal('modalTAss')" class="admin-only bg-teal-600 hover:bg-teal-700 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-plus"></i> Add Single Record
                         </button>
-                        <button onclick="openModal('modalBulkTAss')" class="bg-navy-700 hover:bg-navy-800 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                        <button onclick="openModal('modalBulkTAss')" class="admin-only bg-navy-700 hover:bg-navy-800 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-file-import"></i> Bulk Upload Excel
                         </button>
                         <button onclick="openExportPeriodModal('tass')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
@@ -631,7 +680,7 @@
                         </div>
 
                         <!-- Restore Card -->
-                        <div class="p-5 border border-slate-200 rounded-xl bg-slate-50 space-y-3">
+                        <div class="admin-only p-5 border border-slate-200 rounded-xl bg-slate-50 space-y-3">
                             <div class="p-3 bg-amber-100 text-amber-600 rounded-lg w-fit"><i class="fa-solid fa-upload text-xl"></i></div>
                             <h3 class="font-bold text-slate-800 text-sm">Restore Database</h3>
                             <p class="text-xs text-slate-600">Upload an Excel backup workbook to overwrite/restore system records. Warning: Existing database will be replaced.</p>
@@ -643,7 +692,7 @@
                     </div>
 
                     <!-- Reset Demo Data -->
-                    <div class="border-t pt-6 flex justify-between items-center text-xs">
+                    <div class="admin-only border-t pt-6 flex justify-between items-center text-xs">
                         <div>
                             <span class="font-bold text-slate-700">Need Demo Data?</span>
                             <p class="text-slate-500">Re-initialize default sample datasets for testing purposes.</p>
@@ -970,12 +1019,117 @@
         </div>
     </div>
 
+    </div><!-- /#appShell -->
+
     <!-- JAVASCRIPT APPLICATION LOGIC -->
     <script>
         /**
          * GLOBAL APPLICATION CONSTANTS & MONTH NAMES
          */
         const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+        // Only this email can edit. Everyone else is view-only.
+        const ADMIN_EMAILS = ["rhyant13th@gmail.com"];
+        window.isAdmin = false;
+        window.currentUser = null;
+        let appInitialized = false;
+
+        function applyRoleUI() {
+            document.querySelectorAll('.admin-only').forEach(el => {
+                el.style.display = window.isAdmin ? '' : 'none';
+            });
+            const badge = document.getElementById('userRoleBadge');
+            if (badge && window.currentUser) {
+                badge.classList.remove('hidden');
+                if (window.isAdmin) {
+                    badge.className = 'hidden sm:inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-teal-800 text-teal-100';
+                    badge.innerHTML = '<i class="fa-solid fa-shield-halved mr-1"></i> Admin · ' + window.currentUser.email;
+                } else {
+                    badge.className = 'hidden sm:inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-700 text-slate-200';
+                    badge.innerHTML = '<i class="fa-solid fa-eye mr-1"></i> Viewer · ' + window.currentUser.email;
+                }
+            }
+            // Re-render tables so action buttons respect the current role
+            if (typeof renderAETable === 'function') try { renderAETable(); } catch(e) {}
+            if (typeof renderTAssTable === 'function') try { renderTAssTable(); } catch(e) {}
+        }
+
+        function requireAdmin(actionName) {
+            if (!window.isAdmin) {
+                showToast('View-only mode: only the admin can ' + (actionName || 'make changes') + '.', 'warning');
+                return false;
+            }
+            return true;
+        }
+
+        async function handleLogout() {
+            try {
+                if (window.firebaseAuthFns && window.firebaseAuth) {
+                    await window.firebaseAuthFns.signOut(window.firebaseAuth);
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function setupAuth() {
+            return new Promise((resolve) => {
+                const waitForAuth = () => {
+                    if (!window.firebaseAuth || !window.firebaseAuthFns) {
+                        setTimeout(waitForAuth, 50);
+                        return;
+                    }
+                    const { onAuthStateChanged, signInWithEmailAndPassword } = window.firebaseAuthFns;
+
+                    // Login form
+                    const form = document.getElementById('loginForm');
+                    if (form) {
+                        form.addEventListener('submit', async (e) => {
+                            e.preventDefault();
+                            const email = document.getElementById('loginEmail').value.trim();
+                            const password = document.getElementById('loginPassword').value;
+                            const errBox = document.getElementById('loginError');
+                            const btn = document.getElementById('loginSubmitBtn');
+                            errBox.classList.add('hidden');
+                            btn.disabled = true;
+                            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Signing in…';
+                            try {
+                                await signInWithEmailAndPassword(window.firebaseAuth, email, password);
+                            } catch (err) {
+                                errBox.textContent = err.message || 'Login failed';
+                                errBox.classList.remove('hidden');
+                                btn.disabled = false;
+                                btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> Sign in';
+                            }
+                        });
+                    }
+
+                    onAuthStateChanged(window.firebaseAuth, (user) => {
+                        window.currentUser = user;
+                        window.isAdmin = !!(user && ADMIN_EMAILS.includes(user.email));
+                        const overlay = document.getElementById('loginOverlay');
+                        const shell = document.getElementById('appShell');
+                        if (user) {
+                            if (overlay) overlay.classList.add('hidden');
+                            if (shell) {
+                                shell.classList.remove('hidden');
+                                shell.classList.add('flex');
+                            }
+                            applyRoleUI();
+                            resolve(user);
+                        } else {
+                            if (overlay) overlay.classList.remove('hidden');
+                            if (shell) {
+                                shell.classList.add('hidden');
+                                shell.classList.remove('flex');
+                            }
+                            window.isAdmin = false;
+                        }
+                    });
+                };
+                waitForAuth();
+            });
+        }
         
         // IndexedDB Configuration
         const DB_NAME = "TourismDataBankDB";
@@ -1057,6 +1211,12 @@
          */
         window.onload = async function() {
             try {
+                // Wait for login before loading any data
+                await setupAuth();
+                if (!window.currentUser) return;
+                if (appInitialized) return;
+                appInitialized = true;
+
                 loadPendingSync();
                 await initIndexedDB();
                 await loadAllRecords();
@@ -1336,6 +1496,10 @@
         // (forceAll = false) only pushes records that are actually new,
         // edited, or previously failed to sync — not the whole database.
         async function saveAllToCloud(showMessage = true, forceAll = false) {
+            if (!window.isAdmin) {
+                if (showMessage) showToast('View-only mode: only the admin can save to the cloud.', 'warning');
+                return false;
+            }
             try {
                 await Promise.all([flushPendingDeletes("aes"), flushPendingDeletes("tass")]);
 
@@ -1488,6 +1652,7 @@
         }
 
         async function resetToSampleData() {
+            if (!requireAdmin('reload demo data')) return;
             if (confirm("Reset current database and reload original sample data?")) {
                 await clearStore("aes");
                 await clearStore("tass");
@@ -1787,8 +1952,10 @@
                     <td class="p-3 text-right">${Number(r.total_female||0).toLocaleString()}</td>
                     <td class="p-3 text-right font-bold bg-slate-50 text-slate-900">${totalMF.toLocaleString()}</td>
                     <td class="p-3 text-center space-x-1">
+                        ${window.isAdmin ? `
                         <button onclick="editAERecord(${r.id})" class="text-blue-600 hover:text-blue-800 p-1"><i class="fa-solid fa-pen-to-square"></i></button>
                         <button onclick="deleteAERecord(${r.id})" class="text-rose-600 hover:text-rose-800 p-1"><i class="fa-solid fa-trash"></i></button>
+                        ` : `<span class="text-[10px] text-slate-400">View only</span>`}
                     </td>
                 </tr>`;
             });
@@ -1809,6 +1976,7 @@
 
         async function saveAERecord(e) {
             e.preventDefault();
+            if (!requireAdmin('save records')) return;
             const id = document.getElementById('ae_id').value;
             const prov = document.getElementById('ae_province').value.trim();
             const muni = document.getElementById('ae_municipality').value.trim();
@@ -1879,6 +2047,7 @@
         }
 
         function editAERecord(id) {
+            if (!requireAdmin('edit records')) return;
             const r = aeRecords.find(x => x.id === id);
             if (!r) return;
             document.getElementById('ae_id').value = r.id;
@@ -1900,6 +2069,7 @@
         }
 
         async function deleteAERecord(id) {
+            if (!requireAdmin('delete records')) return;
             if (confirm("Are you sure you want to delete this AE record?")) {
                 const record = aeRecords.find(x => x.id === id);
                 await deleteRecordFromStore("aes", id);
@@ -1955,8 +2125,10 @@
                     <td class="p-3 text-right">${Number(r.total_female||0).toLocaleString()}</td>
                     <td class="p-3 text-right font-bold bg-slate-50 text-teal-700">${Number(r.grand_total||0).toLocaleString()}</td>
                     <td class="p-3 text-center space-x-1">
+                        ${window.isAdmin ? `
                         <button onclick="editTAssRecord(${r.id})" class="text-blue-600 hover:text-blue-800 p-1"><i class="fa-solid fa-pen-to-square"></i></button>
                         <button onclick="deleteTAssRecord(${r.id})" class="text-rose-600 hover:text-rose-800 p-1"><i class="fa-solid fa-trash"></i></button>
+                        ` : `<span class="text-[10px] text-slate-400">View only</span>`}
                     </td>
                 </tr>`;
             });
@@ -1990,6 +2162,7 @@
         }
 
         async function saveTAssRecord(e) {
+            if (!requireAdmin('save records')) return;
             e.preventDefault();
             const id = document.getElementById('tass_id').value;
             const prov = document.getElementById('tass_province').value.trim();
@@ -2064,6 +2237,7 @@
         }
 
         function editTAssRecord(id) {
+            if (!requireAdmin('edit records')) return;
             const r = tassRecords.find(x => x.id === id);
             if (!r) return;
             document.getElementById('tass_id').value = r.id;
@@ -2086,6 +2260,7 @@
         }
 
         async function deleteTAssRecord(id) {
+            if (!requireAdmin('delete records')) return;
             if (confirm("Are you sure you want to delete this TAss record?")) {
                 const record = tassRecords.find(x => x.id === id);
                 await deleteRecordFromStore("tass", id);
@@ -2318,6 +2493,7 @@
         }
 
         async function commitAEBulkImport() {
+            if (!requireAdmin('bulk import')) return;
             if (!pendingBulkAE.length) {
                 showToast("No valid AE records are ready for import. Click Process Excel first and check the preview/errors.", "warning");
                 return;
@@ -2480,6 +2656,7 @@
         }
 
         async function commitTAssBulkImport() {
+            if (!requireAdmin('bulk import')) return;
             if (!pendingBulkTAss.length) {
                 showToast("No valid TAss records are ready for import. Click Process Excel first and check the preview/errors.", "warning");
                 return;
@@ -2851,6 +3028,7 @@
         }
 
         async function handleRestoreExcelFile(event) {
+            if (!requireAdmin('restore the database')) { event.target.value = ""; return; }
             const file = event.target.files[0];
             if (!file) return;
             if (!confirm("WARNING: Restoring will REPLACE all existing database records. Do you wish to continue?")) return;
