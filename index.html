@@ -970,7 +970,6 @@
         </div>
     </div>
 
-
     <!-- JAVASCRIPT APPLICATION LOGIC -->
     <script>
         /**
@@ -980,7 +979,7 @@
         
         // IndexedDB Configuration
         const DB_NAME = "TourismDataBankDB";
-        const DB_VERSION = 1;
+        const DB_VERSION = 3;
         let db = null;
 
         // In-Memory Data Collections
@@ -1127,6 +1126,11 @@
                         const tassStore = db.createObjectStore("tass", { keyPath: "id", autoIncrement: true });
                         tassStore.createIndex("uniqueKey", ["province", "municipality", "year", "month", "attraction"], { unique: true });
                     }
+                    // Schema cleanup: drop any object store from an older DB version that
+                    // is no longer part of the schema (only "aes" and "tass" remain).
+                    Array.from(db.objectStoreNames).forEach(name => {
+                        if (name !== "aes" && name !== "tass") db.deleteObjectStore(name);
+                    });
                 };
 
                 request.onsuccess = function(e) {
@@ -1233,10 +1237,10 @@
          */
         const CLOUD_AE = "tourism_ae_records";
         const CLOUD_TASS = "tourism_tass_records";
+        const CLOUD_COLLECTIONS = { aes: CLOUD_AE, tass: CLOUD_TASS };
 
         function cloudDocId(type, r) {
-            const subject = type === "aes" ? r.establishment : r.attraction;
-            const parts = [r.province, r.municipality, r.year, r.month, subject];
+            const parts = [r.province, r.municipality, r.year, r.month, type === "aes" ? r.establishment : r.attraction];
             return parts.map(v => String(v ?? "").trim().toLowerCase())
                 .join("__").replace(/[^a-z0-9_-]+/g, "_").slice(0, 500);
         }
@@ -1264,8 +1268,7 @@
         async function getCloudRecords(type) {
             await waitForCloud();
             const { collection, getDocs } = window.cloudFns;
-            const name = type === "aes" ? CLOUD_AE : CLOUD_TASS;
-            const snap = await getDocs(collection(window.cloudDB, name));
+            const snap = await getDocs(collection(window.cloudDB, CLOUD_COLLECTIONS[type]));
             return snap.docs.map(d => cleanCloudRecord(d.data()));
         }
 
@@ -1298,8 +1301,8 @@
 
         async function saveRecordsToCloud(type, records) {
             await waitForCloud();
-            const { collection, doc, writeBatch, setDoc } = window.cloudFns;
-            const name = type === "aes" ? CLOUD_AE : CLOUD_TASS;
+            const { collection, doc, writeBatch } = window.cloudFns;
+            const name = CLOUD_COLLECTIONS[type];
             const clean = dedupePendingRecords(type, records).map(cleanCloudRecord);
             // Firestore batches are limited to 500 writes. Chunk the upload.
             for (let i = 0; i < clean.length; i += 450) {
@@ -1375,15 +1378,13 @@
         async function deleteRecordFromCloud(type, record) {
             await waitForCloud();
             const { collection, doc, deleteDoc } = window.cloudFns;
-            const name = type === "aes" ? CLOUD_AE : CLOUD_TASS;
-            await deleteDoc(doc(collection(window.cloudDB, name), cloudDocId(type, record)));
+            await deleteDoc(doc(collection(window.cloudDB, CLOUD_COLLECTIONS[type]), cloudDocId(type, record)));
         }
 
         async function setRecordToCloud(type, record) {
             await waitForCloud();
             const { collection, doc, setDoc } = window.cloudFns;
-            const name = type === "aes" ? CLOUD_AE : CLOUD_TASS;
-            await setDoc(doc(collection(window.cloudDB, name), cloudDocId(type, record)), {
+            await setDoc(doc(collection(window.cloudDB, CLOUD_COLLECTIONS[type]), cloudDocId(type, record)), {
                 ...cleanCloudRecord(record),
                 cloudUpdatedAt: new Date().toISOString()
             });
@@ -1392,7 +1393,7 @@
         async function replacePeriodInCloud(type, records, periods) {
             await waitForCloud();
             const { collection, query, where, getDocs, doc, writeBatch } = window.cloudFns;
-            const name = type === "aes" ? CLOUD_AE : CLOUD_TASS;
+            const name = CLOUD_COLLECTIONS[type];
             const periodRecords = dedupePendingRecords(type, records);
 
             // Delete only the uploaded reporting period(s), not the whole database.
