@@ -140,7 +140,7 @@
                 <button id="btnSaveCloud" onclick="saveAllToCloud()" class="admin-only bg-teal-700 hover:bg-teal-600 text-white px-3 py-1.5 rounded-lg border border-teal-600 transition flex items-center gap-1.5 text-xs">
                     <i class="fa-solid fa-cloud-arrow-up"></i> <span class="hidden sm:inline">Save to Cloud</span>
                 </button>
-                <button id="btnQuickBackup" onclick="exportBackupExcel()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5 text-xs">
+                <button id="btnQuickBackup" onclick="exportBackupExcel()" class="admin-only bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5 text-xs">
                     <i class="fa-solid fa-download"></i> <span class="hidden sm:inline">Quick Backup</span>
                 </button>
                 <button id="btnLogout" onclick="handleLogout()" class="bg-slate-800 hover:bg-rose-700 text-slate-200 hover:text-white px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5 text-xs">
@@ -348,7 +348,7 @@
                         <button onclick="openModal('modalBulkAE')" class="admin-only bg-navy-700 hover:bg-navy-800 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-file-import"></i> Bulk Upload Excel
                         </button>
-                        <button onclick="openExportPeriodModal('aes')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                        <button onclick="openExportPeriodModal('aes')" class="admin-only bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-file-export"></i> Export Excel
                         </button>
                     </div>
@@ -419,7 +419,7 @@
                         <button onclick="openModal('modalBulkTAss')" class="admin-only bg-navy-700 hover:bg-navy-800 text-white text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-file-import"></i> Bulk Upload Excel
                         </button>
-                        <button onclick="openExportPeriodModal('tass')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
+                        <button onclick="openExportPeriodModal('tass')" class="admin-only bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs md:text-sm px-3.5 py-2 rounded-lg font-medium transition flex items-center gap-1.5">
                             <i class="fa-solid fa-file-export"></i> Export Excel
                         </button>
                     </div>
@@ -485,11 +485,8 @@
                             <!-- populated dynamically -->
                         </select>
                         <div class="flex gap-2">
-                            <button onclick="exportAnnualReportExcel()" class="bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
-                            <div class="flex gap-2">
-                            <button onclick="exportMonthlyReportExcel()" class="bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
+                            <button onclick="exportAnnualReportExcel()" class="admin-only bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
                             <button onclick="window.print()" class="bg-slate-800 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-slate-700"><i class="fa-solid fa-print mr-1"></i> Print Report</button>
-                        </div>
                         </div>
                     </div>
                 </div>
@@ -592,7 +589,7 @@
                             <option value="10">October</option><option value="11">November</option><option value="12">December</option>
                         </select>
                         <select id="topAEMuni" onchange="renderTopAEReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="ALL">All Municipalities</option></select>
-                        <button onclick="exportTopAEExcel()" class="bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
+                        <button onclick="exportTopAEExcel()" class="admin-only bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
                     </div>
                 </div>
 
@@ -635,7 +632,7 @@
                             <option value="10">October</option><option value="11">November</option><option value="12">December</option>
                         </select>
                         <select id="topTAssMuni" onchange="renderTopTAssReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="ALL">All Municipalities</option></select>
-                        <button onclick="exportTopTAssExcel()" class="bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
+                        <button onclick="exportTopTAssExcel()" class="admin-only bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
                     </div>
                 </div>
 
@@ -670,7 +667,7 @@
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
                         <!-- Backup Card -->
-                        <div class="p-5 border border-slate-200 rounded-xl bg-slate-50 space-y-3">
+                        <div class="admin-only p-5 border border-slate-200 rounded-xl bg-slate-50 space-y-3">
                             <div class="p-3 bg-blue-100 text-blue-600 rounded-lg w-fit"><i class="fa-solid fa-download text-xl"></i></div>
                             <h3 class="font-bold text-slate-800 text-sm">Export Full Database</h3>
                             <p class="text-xs text-slate-600">Downloads an Excel workbook containing all Accommodation Establishment (AEs) records, Same-Day Visitor (TAss) records, and backup information.</p>
@@ -2993,12 +2990,12 @@
             XLSX.writeFile(workbook, fileName, { bookType: 'xlsx', compression: true });
         }
 
-        function openExportPeriodModal(dataset){document.getElementById('exportDataset').value=dataset||'aes';document.getElementById('exportScope').value='MONTH';document.querySelectorAll('input[name=exportScopeRadio]').forEach(r=>r.checked=(r.value==='MONTH'));populateExportYears();updateExportPeriodControls();const el=document.getElementById('modalExportPeriod');el.classList.remove('hidden');el.classList.add('flex');}
+        function openExportPeriodModal(dataset){if(!requireAdmin('download data'))return;document.getElementById('exportDataset').value=dataset||'aes';document.getElementById('exportScope').value='MONTH';document.querySelectorAll('input[name=exportScopeRadio]').forEach(r=>r.checked=(r.value==='MONTH'));populateExportYears();updateExportPeriodControls();const el=document.getElementById('modalExportPeriod');el.classList.remove('hidden');el.classList.add('flex');}
         function populateExportYears(){const data=document.getElementById('exportDataset').value==='tass'?tassRecords:aeRecords;const years=[...new Set(data.map(r=>Number(r.year)).filter(Boolean))].sort((a,b)=>b-a);const sel=document.getElementById('exportYear');const cur=sel.value;sel.innerHTML=years.map(y=>`<option value="${y}">${y}</option>`).join('');if(cur && years.includes(Number(cur)))sel.value=cur;else if(years.length)sel.value=String(years[0]);else sel.innerHTML='<option value="">No saved year</option>';}
         function updateExportPeriodControls(){const scope=document.getElementById('exportScope').value;const year=document.getElementById('exportYear');const month=document.getElementById('exportMonth');const info=document.getElementById('exportScopeInfo');const yearDisabled=scope==='ALL_DATA';const monthDisabled=scope!=='MONTH';year.disabled=yearDisabled;month.disabled=monthDisabled;year.classList.toggle('opacity-50',yearDisabled);month.classList.toggle('opacity-50',monthDisabled);if(scope==='YEAR')month.value='1';if(scope==='ALL_DATA'){info.innerHTML='<strong>3. All Data:</strong> exports every saved year and month in the selected dataset.';}else if(scope==='YEAR'){info.innerHTML='<strong>2. Specific Year + All Months:</strong> exports January–December for the selected year.';}else{info.innerHTML='<strong>1. Specific Year + Month:</strong> exports only the selected month of the selected year.';}}
-        function exportSelectedPeriodExcel(){const dataset=document.getElementById('exportDataset').value,scope=document.getElementById('exportScope').value,yearValue=document.getElementById('exportYear').value,mv=document.getElementById('exportMonth').value;if(scope==='ALL_DATA'){if(dataset==='aes')exportAEsExcel(null,'ALL');else exportTAssExcel(null,'ALL');closeModal('modalExportPeriod');return;}const year=Number(yearValue);if(!year){showToast('No saved year is available to export.','warning');return;}const month=scope==='YEAR'?'ALL':Number(mv);if(dataset==='aes')exportAEsExcel(year,month);else exportTAssExcel(year,month);closeModal('modalExportPeriod');}
-        function exportAEsExcel(year=null,month='ALL'){const source=year==null?aeRecords:aeRecords.filter(r=>Number(r.year)===Number(year)&&(month==='ALL'||Number(r.month)===Number(month)));if(!source.length){showToast('No Tourist Arrival records match the selected period.','warning');return;}const headers=["Province","Municipality","Year","Month","Accommodation Establishment","Type Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total (L+F+Overseas)","Total Male","Total Female","Total (M+F)"];const rows=source.map(r=>[r.province,r.municipality,r.year,MONTH_NAMES[r.month-1],r.establishment,r.type_class||'',Number(r.local_tourist||0),Number(r.foreign_tourist||0),Number(r.overseas_filipino||0),Number(r.local_tourist||0)+Number(r.foreign_tourist||0)+Number(r.overseas_filipino||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.total_mf||0)]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,makeDataSheet(headers,rows,[2,6,7,8,9,10,11,12]),'AEs Data');XLSX.utils.book_append_sheet(wb,makeInfoSheet('Tourist Arrivals – Accommodation Establishments (AEs)',`Export period: ${year==null?'All Saved Data':`${year} - ${month==='ALL'?'All Months':MONTH_NAMES[month-1]}`}`),'Info');saveWorkbook(wb,`Tourist_Arrivals_AEs_${year==null?'All_Data':`${year}_${month==='ALL'?'All_Months':MONTH_NAMES[month-1]}`}.xlsx`);}
-        function exportTAssExcel(year=null,month='ALL'){const source=year==null?tassRecords:tassRecords.filter(r=>Number(r.year)===Number(year)&&(month==='ALL'||Number(r.month)===Number(month)));if(!source.length){showToast('No Same-Day Visitor records match the selected period.','warning');return;}const headers=["Province","Municipality","Year","Month","Tourist Attraction","TM(M)","TM(F)","TM(SUM)","OM(M)","OM(F)","OM(SUM)","FCR(M)","FCR(F)","FCR(SUM)","Total Male","Total Female","Grand Total"];const rows=source.map(r=>[r.province,r.municipality,r.year,MONTH_NAMES[r.month-1],r.attraction,Number(r.tm_m||0),Number(r.tm_f||0),Number(r.tm_sum||0),Number(r.om_m||0),Number(r.om_f||0),Number(r.om_sum||0),Number(r.fcr_m||0),Number(r.fcr_f||0),Number(r.fcr_sum||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.grand_total||0)]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,makeDataSheet(headers,rows,[2,5,6,7,8,9,10,11,12,13,14,15,16]),'TAss Data');XLSX.utils.book_append_sheet(wb,makeInfoSheet('Same-Day Visitors – Tourist Attraction Arrivals (TAss)',`Export period: ${year==null?'All Saved Data':`${year} - ${month==='ALL'?'All Months':MONTH_NAMES[month-1]}`}`),'Info');saveWorkbook(wb,`SameDay_Visitors_TAss_${year==null?'All_Data':`${year}_${month==='ALL'?'All_Months':MONTH_NAMES[month-1]}`}.xlsx`);}
+        function exportSelectedPeriodExcel(){if(!requireAdmin('download data'))return;const dataset=document.getElementById('exportDataset').value,scope=document.getElementById('exportScope').value,yearValue=document.getElementById('exportYear').value,mv=document.getElementById('exportMonth').value;if(scope==='ALL_DATA'){if(dataset==='aes')exportAEsExcel(null,'ALL');else exportTAssExcel(null,'ALL');closeModal('modalExportPeriod');return;}const year=Number(yearValue);if(!year){showToast('No saved year is available to export.','warning');return;}const month=scope==='YEAR'?'ALL':Number(mv);if(dataset==='aes')exportAEsExcel(year,month);else exportTAssExcel(year,month);closeModal('modalExportPeriod');}
+        function exportAEsExcel(year=null,month='ALL'){if(!requireAdmin('download data'))return;const source=year==null?aeRecords:aeRecords.filter(r=>Number(r.year)===Number(year)&&(month==='ALL'||Number(r.month)===Number(month)));if(!source.length){showToast('No Tourist Arrival records match the selected period.','warning');return;}const headers=["Province","Municipality","Year","Month","Accommodation Establishment","Type Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total (L+F+Overseas)","Total Male","Total Female","Total (M+F)"];const rows=source.map(r=>[r.province,r.municipality,r.year,MONTH_NAMES[r.month-1],r.establishment,r.type_class||'',Number(r.local_tourist||0),Number(r.foreign_tourist||0),Number(r.overseas_filipino||0),Number(r.local_tourist||0)+Number(r.foreign_tourist||0)+Number(r.overseas_filipino||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.total_mf||0)]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,makeDataSheet(headers,rows,[2,6,7,8,9,10,11,12]),'AEs Data');XLSX.utils.book_append_sheet(wb,makeInfoSheet('Tourist Arrivals – Accommodation Establishments (AEs)',`Export period: ${year==null?'All Saved Data':`${year} - ${month==='ALL'?'All Months':MONTH_NAMES[month-1]}`}`),'Info');saveWorkbook(wb,`Tourist_Arrivals_AEs_${year==null?'All_Data':`${year}_${month==='ALL'?'All_Months':MONTH_NAMES[month-1]}`}.xlsx`);}
+        function exportTAssExcel(year=null,month='ALL'){if(!requireAdmin('download data'))return;const source=year==null?tassRecords:tassRecords.filter(r=>Number(r.year)===Number(year)&&(month==='ALL'||Number(r.month)===Number(month)));if(!source.length){showToast('No Same-Day Visitor records match the selected period.','warning');return;}const headers=["Province","Municipality","Year","Month","Tourist Attraction","TM(M)","TM(F)","TM(SUM)","OM(M)","OM(F)","OM(SUM)","FCR(M)","FCR(F)","FCR(SUM)","Total Male","Total Female","Grand Total"];const rows=source.map(r=>[r.province,r.municipality,r.year,MONTH_NAMES[r.month-1],r.attraction,Number(r.tm_m||0),Number(r.tm_f||0),Number(r.tm_sum||0),Number(r.om_m||0),Number(r.om_f||0),Number(r.om_sum||0),Number(r.fcr_m||0),Number(r.fcr_f||0),Number(r.fcr_sum||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.grand_total||0)]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,makeDataSheet(headers,rows,[2,5,6,7,8,9,10,11,12,13,14,15,16]),'TAss Data');XLSX.utils.book_append_sheet(wb,makeInfoSheet('Same-Day Visitors – Tourist Attraction Arrivals (TAss)',`Export period: ${year==null?'All Saved Data':`${year} - ${month==='ALL'?'All Months':MONTH_NAMES[month-1]}`}`),'Info');saveWorkbook(wb,`SameDay_Visitors_TAss_${year==null?'All_Data':`${year}_${month==='ALL'?'All_Months':MONTH_NAMES[month-1]}`}.xlsx`);}
 
         function makeInfoSheet(title, subtitle) {
             const ws = XLSX.utils.aoa_to_sheet([
@@ -3015,6 +3012,7 @@
         }
 
         function exportBackupExcel() {
+            if (!requireAdmin('download data')) return;
             const wb = XLSX.utils.book_new();
             const aeHeaders = ["ID","Province","Municipality","Year","Month","Accommodation Establishment","Type Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total (L+F+Overseas)","Total Male","Total Female","Total (M+F)"];
             const aeRows = aeRecords.map(r => [r.id||'',r.province,r.municipality,r.year,MONTH_NAMES[r.month-1],r.establishment,r.type_class||'',Number(r.local_tourist||0),Number(r.foreign_tourist||0),Number(r.overseas_filipino||0),Number(r.total_lf||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.total_mf||0)]);
@@ -3096,7 +3094,7 @@
             return idx >= 0 ? idx + 1 : 0;
         }
 
-        function downloadAETemplate() {
+        function downloadAETemplate() { if (!requireAdmin('download data')) return;
             const headers = ["Province/HUC/ICC","Municipality/City","Year","Month","Accommodation Establishment","Type-Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total (L+F)","Total Male","Total Female","Total (M+F)"];
             const sample = ["Occidental Mindoro","Mamburao",2026,1,"Sample Establishment","Hotel",0,0,0,0,0,0,0];
             const wb = XLSX.utils.book_new();
@@ -3105,7 +3103,7 @@
             saveWorkbook(wb, "Tourism_AEs_Excel_Upload_Template.xlsx");
         }
 
-        function downloadTAssTemplate() {
+        function downloadTAssTemplate() { if (!requireAdmin('download data')) return;
             const headers = ["Province/HUC/ICC","Municipality/City","Year","Month","Tourist Attraction","TM(M)","TM(F)","TM(SUM)","OM(M)","OM(F)","OM(SUM)","FCR(M)","FCR(F)","FCR(SUM)","Total Male","Total Female","Grand Total"];
             const sample = ["Occidental Mindoro","Mamburao",2026,1,"Sample Attraction",0,0,0,0,0,0,0,0,0,0,0,0];
             const wb = XLSX.utils.book_new();
@@ -3135,7 +3133,7 @@
             return rows;
         }
 
-        function exportAnnualReportExcel() {
+        function exportAnnualReportExcel() { if (!requireAdmin('download data')) return;
             const yr = document.getElementById('rptAnnualYear').value || 2026;
             const rows = getAnnualReportRows(yr);
             const wb = XLSX.utils.book_new();
@@ -3171,7 +3169,7 @@
             return rows;
         }
 
-        function exportMonthlyReportExcel() {
+        function exportMonthlyReportExcel() { if (!requireAdmin('download data')) return;
             const yr=document.getElementById('rptMonthlyYear').value||2026;
             const mu=document.getElementById('rptMonthlyMuni').value;
             const scope=mu==='ALL'?'All Municipalities':mu;
@@ -3202,7 +3200,7 @@
             return Object.values(estMap).sort((a,b)=>b.count-a.count).slice(0,10);
         }
 
-        function exportTopAEExcel() {
+        function exportTopAEExcel() { if (!requireAdmin('download data')) return;
             const yr=document.getElementById('topAEYear').value||2026,mo=document.getElementById('topAEMonth').value,mu=document.getElementById('topAEMuni').value;
             const wb=XLSX.utils.book_new();
             const rows=getTopAERows().map((x,i)=>[i+1,x.establishment,x.municipality,x.type,x.count]);
@@ -3222,7 +3220,7 @@
             return Object.values(map).sort((a,b)=>b.count-a.count).slice(0,10);
         }
 
-        function exportTopTAssExcel() {
+        function exportTopTAssExcel() { if (!requireAdmin('download data')) return;
             const yr=document.getElementById('topTAssYear').value||2026,mo=document.getElementById('topTAssMonth').value,mu=document.getElementById('topTAssMuni').value;
             const wb=XLSX.utils.book_new();
             const rows=getTopTAssRows().map((x,i)=>[i+1,x.attraction,x.municipality,x.count]);
