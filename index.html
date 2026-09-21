@@ -991,6 +991,62 @@
         let pendingBulkAE = [];
         let pendingBulkTAss = [];
 
+        /**
+         * CLOUD SYNC QUEUE
+         * Tracks which local records still need to be pushed to Firestore
+         * (new/edited records whose immediate cloud write hasn't happened or
+         * failed) and which deleted records still need to be removed from
+         * Firestore. This lets "Save to Cloud" push ONLY what changed instead
+         * of re-uploading the entire database every time. Persisted to
+         * localStorage so nothing is lost if the tab closes before syncing.
+         */
+        const PENDING_SYNC_KEY = "tourismPendingSync_v1";
+        let pendingSync = { aes: new Set(), tass: new Set() };
+        let pendingDeletes = { aes: [], tass: [] };
+
+        function loadPendingSync() {
+            try {
+                const raw = localStorage.getItem(PENDING_SYNC_KEY);
+                if (!raw) return;
+                const parsed = JSON.parse(raw);
+                pendingSync.aes = new Set(parsed.aes || []);
+                pendingSync.tass = new Set(parsed.tass || []);
+                pendingDeletes.aes = parsed.deletesAes || [];
+                pendingDeletes.tass = parsed.deletesTass || [];
+            } catch (_) { /* corrupt/unavailable storage - start clean */ }
+        }
+
+        function persistPendingSync() {
+            try {
+                localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify({
+                    aes: Array.from(pendingSync.aes),
+                    tass: Array.from(pendingSync.tass),
+                    deletesAes: pendingDeletes.aes,
+                    deletesTass: pendingDeletes.tass
+                }));
+            } catch (_) { /* storage unavailable - sync queue just won't survive reload */ }
+        }
+
+        function markDirty(type, id) {
+            if (id === undefined || id === null) return;
+            pendingSync[type].add(id);
+            persistPendingSync();
+        }
+
+        function clearDirty(type, ids) {
+            ids.forEach(id => pendingSync[type].delete(id));
+            persistPendingSync();
+        }
+
+        function markPendingDelete(type, record) {
+            pendingDeletes[type].push(cleanCloudRecord(record));
+            persistPendingSync();
+        }
+
+        function pendingSyncCount() {
+            return pendingSync.aes.size + pendingSync.tass.size + pendingDeletes.aes.length + pendingDeletes.tass.length;
+        }
+
         // Chart instances
         let chartMonthlyTrendObj = null;
         let chartMunicipalityObj = null;
@@ -1002,8 +1058,14 @@
          */
         window.onload = async function() {
             try {
+                loadPendingSync();
                 await initIndexedDB();
                 await loadAllRecords();
+
+                // Render whatever is already cached locally right away instead
+                // of leaving the UI blank/frozen while we wait on the network -
+                // this is what makes the app feel responsive instead of hanging.
+                if (aeRecords.length || tassRecords.length) refreshAllViews();
 
                 // Firestore is the shared source of truth. If it already contains
                 // data, use it in this browser. If Firestore is empty but this
@@ -1012,7 +1074,7 @@
                 if (cloud.connected && cloud.hasData) {
                     refreshAllViews();
                 } else if (cloud.connected && !cloud.hasData && (aeRecords.length || tassRecords.length)) {
-                    await saveAllToCloud(false);
+                    await saveAllToCloud(false, true);
                     refreshAllViews();
                     showToast("Existing local records were migrated to the shared cloud database.", "success");
                 } else if (!cloud.connected) {
@@ -1026,6 +1088,12 @@
                     // Keep the database empty rather than silently creating demo data.
                     refreshAllViews();
                     showToast("Cloud database is connected and currently empty. Upload or encode data to begin.", "info");
+                }
+                // If a previous session had edits that never made it to the
+                // cloud (offline, tab closed, failed write), quietly retry them
+                // now that we're connected - without re-uploading everything else.
+                if (cloud.connected && pendingSyncCount() > 0) {
+                    saveAllToCloud(false).catch(() => {});
                 }
             } catch (err) {
                 console.error("Database initialization failed:", err);
@@ -1123,6 +1191,41 @@
         }
 
         /**
+         * Bulk write helpers. A single IndexedDB transaction can hold thousands
+         * of puts, so batching every record into ONE transaction (instead of
+         * awaiting a separate transaction per record in a loop) turns an O(n)
+         * series of round trips into a single fast commit. This is what makes
+         * loading/restoring large datasets smooth instead of hanging.
+         */
+        function putRecordsBulk(storeName, records) {
+            return new Promise((resolve, reject) => {
+                if (!records || !records.length) return resolve([]);
+                const tx = db.transaction(storeName, "readwrite");
+                const store = tx.objectStore(storeName);
+                const ids = [];
+                records.forEach(r => {
+                    const req = store.put(r);
+                    req.onsuccess = () => ids.push(req.result);
+                });
+                tx.oncomplete = () => resolve(ids);
+                tx.onerror = () => reject(tx.error);
+                tx.onabort = () => reject(tx.error || new Error("Bulk write aborted."));
+            });
+        }
+
+        function clearAndBulkPut(storeName, records) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, "readwrite");
+                const store = tx.objectStore(storeName);
+                store.clear();
+                (records || []).forEach(r => store.put(r));
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => reject(tx.error);
+                tx.onabort = () => reject(tx.error || new Error("Bulk replace aborted."));
+            });
+        }
+
+        /**
          * FIRESTORE CLOUD STORAGE
          * Firestore is the shared master copy. IndexedDB remains a local cache
          * so the application remains responsive and can recover from temporary
@@ -1175,10 +1278,10 @@
                 ]);
 
                 if (cloudAEs.length || cloudTAss.length) {
-                    await clearStore("aes");
-                    await clearStore("tass");
-                    for (const r of cloudAEs) await putRecordToStore("aes", r);
-                    for (const r of cloudTAss) await putRecordToStore("tass", r);
+                    await Promise.all([
+                        clearAndBulkPut("aes", cloudAEs),
+                        clearAndBulkPut("tass", cloudTAss)
+                    ]);
                     await loadAllRecords();
                     updateCloudStatus(`Cloud Synced (${(cloudAEs.length + cloudTAss.length).toLocaleString()})`, true);
                     return { connected: true, hasData: true };
@@ -1212,15 +1315,54 @@
             }
         }
 
-        async function saveAllToCloud(showMessage = true) {
+        async function flushPendingDeletes(type) {
+            const list = pendingDeletes[type];
+            if (!list.length) return;
+            const remaining = [];
+            for (const rec of list) {
+                try { await deleteRecordFromCloud(type, rec); }
+                catch (_) { remaining.push(rec); }
+            }
+            pendingDeletes[type] = remaining;
+            persistPendingSync();
+        }
+
+        // showMessage: whether to toast the result. forceAll: push every record
+        // regardless of sync state (used for migrations/restores where the
+        // whole dataset genuinely needs to land in the cloud). The default
+        // (forceAll = false) only pushes records that are actually new,
+        // edited, or previously failed to sync — not the whole database.
+        async function saveAllToCloud(showMessage = true, forceAll = false) {
             try {
+                await Promise.all([flushPendingDeletes("aes"), flushPendingDeletes("tass")]);
+
+                const aeToSync = forceAll ? aeRecords : aeRecords.filter(r => pendingSync.aes.has(r.id));
+                const tassToSync = forceAll ? tassRecords : tassRecords.filter(r => pendingSync.tass.has(r.id));
+                const total = aeToSync.length + tassToSync.length;
+
+                if (total === 0) {
+                    updateCloudStatus(`Cloud Synced (${(aeRecords.length + tassRecords.length).toLocaleString()})`, true);
+                    if (showMessage) showToast("Everything is already up to date in the cloud.", "info");
+                    return true;
+                }
+
                 updateCloudStatus("Saving to Cloud...");
                 await Promise.all([
-                    saveRecordsToCloud("aes", aeRecords),
-                    saveRecordsToCloud("tass", tassRecords)
+                    aeToSync.length ? saveRecordsToCloud("aes", aeToSync) : Promise.resolve(),
+                    tassToSync.length ? saveRecordsToCloud("tass", tassToSync) : Promise.resolve()
                 ]);
+
+                if (forceAll) {
+                    pendingSync.aes.clear();
+                    pendingSync.tass.clear();
+                    persistPendingSync();
+                } else {
+                    clearDirty("aes", aeToSync.map(r => r.id));
+                    clearDirty("tass", tassToSync.map(r => r.id));
+                }
+
                 updateCloudStatus(`Cloud Saved (${(aeRecords.length + tassRecords.length).toLocaleString()})`, true);
-                if (showMessage) showToast(`Cloud save complete: ${(aeRecords.length + tassRecords.length).toLocaleString()} records.`, "success");
+                if (showMessage) showToast(`Cloud save complete: ${total.toLocaleString()} new/updated record(s) synced.`, "success");
                 return true;
             } catch (err) {
                 console.error("Firestore save failed:", err);
@@ -1334,8 +1476,10 @@
                 { province: "Occidental Mindoro", municipality: "San Jose", year: 2026, month: 1, attraction: "Ilin Island Eco Beach", tm_m: 220, tm_f: 210, tm_sum: 430, om_m: 310, om_f: 290, om_sum: 600, fcr_m: 40, fcr_f: 35, fcr_sum: 75, total_male: 570, total_female: 535, grand_total: 1105 }
             ];
 
-            for (let rec of sampleAEs) await putRecordToStore("aes", rec);
-            for (let rec of sampleTAss) await putRecordToStore("tass", rec);
+            const aeIds = await putRecordsBulk("aes", sampleAEs);
+            const tassIds = await putRecordsBulk("tass", sampleTAss);
+            aeIds.forEach(id => markDirty("aes", id));
+            tassIds.forEach(id => markDirty("tass", id));
 
             await loadAllRecords();
             refreshAllViews();
@@ -1346,8 +1490,13 @@
             if (confirm("Reset current database and reload original sample data?")) {
                 await clearStore("aes");
                 await clearStore("tass");
+                pendingSync.aes.clear();
+                pendingSync.tass.clear();
+                pendingDeletes.aes = [];
+                pendingDeletes.tass = [];
+                persistPendingSync();
                 await preloadSampleData();
-                await saveAllToCloud(false);
+                await saveAllToCloud(false, true);
             }
         }
 
@@ -1713,8 +1862,14 @@
                 record.id = Number(id);
             }
 
-            await putRecordToStore("aes", record);
-            try { await setRecordToCloud("aes", record); updateCloudStatus("Cloud Saved", true); }
+            const savedId = await putRecordToStore("aes", record);
+            record.id = record.id || savedId;
+            markDirty("aes", record.id);
+            try {
+                await setRecordToCloud("aes", record);
+                clearDirty("aes", [record.id]);
+                updateCloudStatus("Cloud Saved", true);
+            }
             catch (cloudErr) { console.error(cloudErr); showToast("Local record saved, but cloud save failed: " + cloudErr.message, "warning"); }
             await loadAllRecords();
             closeModal('modalAE');
@@ -1747,7 +1902,11 @@
             if (confirm("Are you sure you want to delete this AE record?")) {
                 const record = aeRecords.find(x => x.id === id);
                 await deleteRecordFromStore("aes", id);
-                if (record) { try { await deleteRecordFromCloud("aes", record); } catch (cloudErr) { console.error(cloudErr); showToast("Local deletion completed, but cloud deletion failed: " + cloudErr.message, "warning"); } }
+                clearDirty("aes", [id]);
+                if (record) {
+                    try { await deleteRecordFromCloud("aes", record); }
+                    catch (cloudErr) { console.error(cloudErr); markPendingDelete("aes", record); showToast("Local deletion completed, but cloud deletion failed: " + cloudErr.message, "warning"); }
+                }
                 await loadAllRecords();
                 refreshAllViews();
                 showToast("AE Record deleted.", "info");
@@ -1888,8 +2047,14 @@
                 record.id = Number(id);
             }
 
-            await putRecordToStore("tass", record);
-            try { await setRecordToCloud("tass", record); updateCloudStatus("Cloud Saved", true); }
+            const savedId = await putRecordToStore("tass", record);
+            record.id = record.id || savedId;
+            markDirty("tass", record.id);
+            try {
+                await setRecordToCloud("tass", record);
+                clearDirty("tass", [record.id]);
+                updateCloudStatus("Cloud Saved", true);
+            }
             catch (cloudErr) { console.error(cloudErr); showToast("Local record saved, but cloud save failed: " + cloudErr.message, "warning"); }
             await loadAllRecords();
             closeModal('modalTAss');
@@ -1923,7 +2088,11 @@
             if (confirm("Are you sure you want to delete this TAss record?")) {
                 const record = tassRecords.find(x => x.id === id);
                 await deleteRecordFromStore("tass", id);
-                if (record) { try { await deleteRecordFromCloud("tass", record); } catch (cloudErr) { console.error(cloudErr); showToast("Local deletion completed, but cloud deletion failed: " + cloudErr.message, "warning"); } }
+                clearDirty("tass", [id]);
+                if (record) {
+                    try { await deleteRecordFromCloud("tass", record); }
+                    catch (cloudErr) { console.error(cloudErr); markPendingDelete("tass", record); showToast("Local deletion completed, but cloud deletion failed: " + cloudErr.message, "warning"); }
+                }
                 await loadAllRecords();
                 refreshAllViews();
                 showToast("TAss Record deleted.", "info");
@@ -2599,10 +2768,7 @@
                 const aeRows = XLSX.utils.sheet_to_json(workbook.Sheets["AEs"], { defval: "" });
                 const taRows = XLSX.utils.sheet_to_json(workbook.Sheets["TAss"], { defval: "" });
 
-                await clearStore("aes");
-                await clearStore("tass");
-
-                for (const r of aeRows) {
+                const aeRecs = aeRows.map(r => {
                     const rec = {
                         id: r.ID || undefined, province: r.Province || 'Occidental Mindoro', municipality: r.Municipality,
                         year: Number(r.Year), month: monthToNumber(r.Month), establishment: r["Accommodation Establishment"],
@@ -2612,10 +2778,10 @@
                         total_female: Number(r["Total Female"]||0), total_mf: Number(r["Total (M+F)"]||0)
                     };
                     if (rec.id === undefined || rec.id === "") delete rec.id;
-                    await putRecordToStore("aes", rec);
-                }
+                    return rec;
+                });
 
-                for (const r of taRows) {
+                const tassRecs = taRows.map(r => {
                     const rec = {
                         id: r.ID || undefined, province: r.Province || 'Occidental Mindoro', municipality: r.Municipality,
                         year: Number(r.Year), month: monthToNumber(r.Month), attraction: r["Tourist Attraction"],
@@ -2625,11 +2791,21 @@
                         total_male: Number(r["Total Male"]||0), total_female: Number(r["Total Female"]||0), grand_total: Number(r["Grand Total"]||0)
                     };
                     if (rec.id === undefined || rec.id === "") delete rec.id;
-                    await putRecordToStore("tass", rec);
-                }
+                    return rec;
+                });
+
+                // Single-transaction bulk replace instead of one awaited
+                // transaction per row - restores in a fraction of the time.
+                await clearAndBulkPut("aes", aeRecs);
+                await clearAndBulkPut("tass", tassRecs);
+                pendingSync.aes.clear();
+                pendingSync.tass.clear();
+                pendingDeletes.aes = [];
+                pendingDeletes.tass = [];
+                persistPendingSync();
 
                 await loadAllRecords();
-                const cloudSaved = await saveAllToCloud(false);
+                const cloudSaved = await saveAllToCloud(false, true);
                 refreshAllViews();
                 showToast(cloudSaved ? "Database restored and saved to the shared cloud." : "Database restored locally, but cloud save failed.", cloudSaved ? "success" : "warning");
             } catch (err) {
