@@ -8,6 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
     <!-- Excel workbook support (XLSX) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <!-- FontAwesome Icons -->
@@ -722,10 +723,17 @@
                     </div>
                 </div>
 
-                <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                    <h3 class="font-bold text-slate-800 text-sm mb-1">Top 10 Municipalities — AEs vs TAss</h3>
-                    <p class="text-[11px] text-slate-400 mb-3">Each bar combines Tourist Arrivals (AEs) and Same-Day Visitors (TAss) for the selected year.</p>
-                    <div class="h-96"><canvas id="chartTopMuniBar"></canvas></div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                        <h3 class="font-bold text-slate-800 text-sm mb-1">Top 10 Municipalities — Tourist Arrivals (AEs)</h3>
+                        <p class="text-[11px] text-slate-400 mb-3">Municipalities ranked independently by AEs for the selected year.</p>
+                        <div class="h-96"><canvas id="chartTopMuniBarAE"></canvas></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                        <h3 class="font-bold text-slate-800 text-sm mb-1">Top 10 Municipalities — Same-Day Visitors (TAss)</h3>
+                        <p class="text-[11px] text-slate-400 mb-3">Municipalities ranked independently by TAss for the selected year.</p>
+                        <div class="h-96"><canvas id="chartTopMuniBarTAss"></canvas></div>
+                    </div>
                 </div>
 
                 <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
@@ -1296,7 +1304,8 @@
         let chartYearlyTotalsObj = null;
         let chartYearlySeasonalityObj = null;
         let chartTopMuniYearObj = null;
-        let chartTopMuniBarObj = null;
+        let chartTopMuniBarAEObj = null;
+        let chartTopMuniBarTAssObj = null;
 
         /**
          * INITIALIZATION & INDEXEDDB STORAGE SETUP
@@ -3139,8 +3148,14 @@
             if (chartTopMuniYearObj) chartTopMuniYearObj.destroy();
             const top10 = yearRanked.slice(0, 10);
             const muniColors = ['#0f766e', '#14b8a6', '#2dd4bf', '#38bdf8', '#60a5fa', '#818cf8', '#a78bfa', '#c084fc', '#f472b6', '#fb7185'];
+            const hasDataLabels = (typeof ChartDataLabels !== 'undefined');
+            // Denominators for percentage-of-all-municipalities (not just the Top 10 shown), for the currently selected year/All-Years filter
+            const allMuniMetricTotal = yearRanked.reduce((sum, x) => sum + x[metric], 0);
+            const allMuniAETotal = yearRanked.reduce((sum, x) => sum + x.ae, 0);
+            const allMuniTAssTotal = yearRanked.reduce((sum, x) => sum + x.tass, 0);
             chartTopMuniYearObj = new Chart(ctx, {
                 type: 'doughnut',
+                plugins: hasDataLabels ? [ChartDataLabels] : [],
                 data: {
                     labels: top10.map(x => x.municipality),
                     datasets: [{
@@ -3157,34 +3172,102 @@
                             callbacks: {
                                 label: function(ctxItem) {
                                     const val = ctxItem.parsed || 0;
-                                    const total = ctxItem.dataset.data.reduce((a, b) => a + b, 0);
-                                    const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
-                                    return `${ctxItem.label}: ${val.toLocaleString()} (${pct}%)`;
+                                    const pct = allMuniMetricTotal > 0 ? ((val / allMuniMetricTotal) * 100).toFixed(1) : 0;
+                                    return `${ctxItem.label}: ${val.toLocaleString()} (${pct}% of all municipalities)`;
                                 }
                             }
-                        }
+                        },
+                        datalabels: hasDataLabels ? {
+                            color: '#fff',
+                            font: { weight: 'bold', size: 9 },
+                            textStrokeColor: 'rgba(0,0,0,0.35)',
+                            textStrokeWidth: 2,
+                            formatter: (value) => {
+                                const pct = allMuniMetricTotal > 0 ? (value / allMuniMetricTotal) * 100 : 0;
+                                return pct.toFixed(1) + '%';
+                            }
+                        } : undefined
                     }
                 }
             });
 
-            // Horizontal stacked bar: AEs and TAss combined into one bar per municipality (top 10 for the selected year)
-            const ctxBar = document.getElementById('chartTopMuniBar').getContext('2d');
-            if (chartTopMuniBarObj) chartTopMuniBarObj.destroy();
-            chartTopMuniBarObj = new Chart(ctxBar, {
+            // Two independently-ranked horizontal bar charts: Top 10 by AEs, and Top 10 by TAss (each its own ranking, for the selected year)
+            const top10ByAE = [...yearRanked].sort((a, b) => b.ae - a.ae).slice(0, 10);
+            const top10ByTAss = [...yearRanked].sort((a, b) => b.tass - a.tass).slice(0, 10);
+
+            const ctxBarAE = document.getElementById('chartTopMuniBarAE').getContext('2d');
+            if (chartTopMuniBarAEObj) chartTopMuniBarAEObj.destroy();
+            chartTopMuniBarAEObj = new Chart(ctxBarAE, {
                 type: 'bar',
+                plugins: hasDataLabels ? [ChartDataLabels] : [],
                 data: {
-                    labels: top10.map(x => x.municipality),
-                    datasets: [
-                        { label: 'Tourist Arrivals (AEs)', data: top10.map(x => x.ae), backgroundColor: '#3b82f6' },
-                        { label: 'Same-Day Visitors (TAss)', data: top10.map(x => x.tass), backgroundColor: '#14b8a6' }
-                    ]
+                    labels: top10ByAE.map(x => x.municipality),
+                    datasets: [{ label: 'Tourist Arrivals (AEs)', data: top10ByAE.map(x => x.ae), backgroundColor: '#3b82f6' }]
                 },
                 options: {
                     indexAxis: 'y',
                     responsive: true,
                     maintainAspectRatio: false,
-                    scales: { x: { stacked: true }, y: { stacked: true } },
-                    plugins: { legend: { position: 'bottom' } }
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctxItem) {
+                                    const val = ctxItem.parsed.x || 0;
+                                    const pct = allMuniAETotal > 0 ? ((val / allMuniAETotal) * 100).toFixed(1) : 0;
+                                    return `AEs: ${val.toLocaleString()} (${pct}% of all municipalities)`;
+                                }
+                            }
+                        },
+                        datalabels: hasDataLabels ? {
+                            color: '#1e3a8a',
+                            anchor: 'end',
+                            align: 'end',
+                            font: { weight: 'bold', size: 9 },
+                            formatter: (value) => {
+                                const pct = allMuniAETotal > 0 ? (value / allMuniAETotal) * 100 : 0;
+                                return pct.toFixed(1) + '%';
+                            }
+                        } : undefined
+                    }
+                }
+            });
+
+            const ctxBarTAss = document.getElementById('chartTopMuniBarTAss').getContext('2d');
+            if (chartTopMuniBarTAssObj) chartTopMuniBarTAssObj.destroy();
+            chartTopMuniBarTAssObj = new Chart(ctxBarTAss, {
+                type: 'bar',
+                plugins: hasDataLabels ? [ChartDataLabels] : [],
+                data: {
+                    labels: top10ByTAss.map(x => x.municipality),
+                    datasets: [{ label: 'Same-Day Visitors (TAss)', data: top10ByTAss.map(x => x.tass), backgroundColor: '#14b8a6' }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctxItem) {
+                                    const val = ctxItem.parsed.x || 0;
+                                    const pct = allMuniTAssTotal > 0 ? ((val / allMuniTAssTotal) * 100).toFixed(1) : 0;
+                                    return `TAss: ${val.toLocaleString()} (${pct}% of all municipalities)`;
+                                }
+                            }
+                        },
+                        datalabels: hasDataLabels ? {
+                            color: '#0f766e',
+                            anchor: 'end',
+                            align: 'end',
+                            font: { weight: 'bold', size: 9 },
+                            formatter: (value) => {
+                                const pct = allMuniTAssTotal > 0 ? (value / allMuniTAssTotal) * 100 : 0;
+                                return pct.toFixed(1) + '%';
+                            }
+                        } : undefined
+                    }
                 }
             });
 
