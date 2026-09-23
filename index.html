@@ -1725,14 +1725,41 @@
          * COUNTRY OF ORIGIN (FORM A) — self-contained store/sync, separate from
          * the aes/tass pipeline above. Import-only (no manual per-record edits),
          * so it doesn't need the dirty-tracking sync queue those two types use.
+         *
+         * A localStorage mirror backs up every successful save. If IndexedDB
+         * ever comes back empty/unavailable on load (e.g. the "countries"
+         * store wasn't ready yet), this mirror is what keeps an import from
+         * silently disappearing on refresh.
          */
+        const COUNTRY_LS_KEY = "tourismCountryRecords_v1";
+
+        function persistCountryRecordsToLocalStorage() {
+            try { localStorage.setItem(COUNTRY_LS_KEY, JSON.stringify(countryRecords)); } catch (_) { /* storage unavailable */ }
+        }
+
+        function loadCountryRecordsFromLocalStorage() {
+            try {
+                const raw = localStorage.getItem(COUNTRY_LS_KEY);
+                return raw ? JSON.parse(raw) : [];
+            } catch (_) { return []; }
+        }
+
         function countryDocId(year, country) {
             return `${year}__${country}`.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").slice(0, 500);
         }
 
         async function loadCountryRecordsLocal() {
-            if (!db || !db.objectStoreNames.contains("countries")) { countryRecords = []; return; }
-            countryRecords = await getAllFromStore("countries");
+            let fromDb = [];
+            if (db && db.objectStoreNames.contains("countries")) {
+                try { fromDb = await getAllFromStore("countries"); } catch (err) { console.error("Country IndexedDB read failed:", err); fromDb = []; }
+            }
+            if (fromDb && fromDb.length) {
+                countryRecords = fromDb;
+                persistCountryRecordsToLocalStorage();
+                return;
+            }
+            // IndexedDB unavailable or empty - fall back to the localStorage mirror
+            countryRecords = loadCountryRecordsFromLocalStorage();
         }
 
         async function syncCountryRecordsFromCloud() {
@@ -1745,8 +1772,11 @@
                 const snap = await getDocs(collection(window.cloudDB, CLOUD_COUNTRY_COLLECTION));
                 if (!snap.docs.length) return;
                 const cloudRecords = snap.docs.map(d => { const c = { ...d.data() }; delete c.cloudUpdatedAt; return c; });
-                await clearAndBulkPut("countries", cloudRecords);
-                await loadCountryRecordsLocal();
+                if (db && db.objectStoreNames.contains("countries")) {
+                    await clearAndBulkPut("countries", cloudRecords);
+                }
+                countryRecords = cloudRecords;
+                persistCountryRecordsToLocalStorage();
             } catch (err) {
                 console.error("Country records cloud sync failed, using local cache:", err);
             }
@@ -3544,17 +3574,32 @@
 
                 // Overwrite rule: same year OR same source file name replaces prior data
                 const kept = countryRecords.filter(r => Number(r.year) !== year && r.sourceFile !== file.name);
+                const merged = [...kept, ...newRecords];
 
+                let dbWriteOk = false;
                 if (db && db.objectStoreNames.contains('countries')) {
-                    await clearAndBulkPut('countries', [...kept, ...newRecords]);
+                    try {
+                        await clearAndBulkPut('countries', merged);
+                        dbWriteOk = true;
+                    } catch (dbErr) {
+                        console.error('Country IndexedDB write failed:', dbErr);
+                    }
                 }
-                await loadCountryRecordsLocal();
+
+                if (dbWriteOk) {
+                    await loadCountryRecordsLocal();
+                } else {
+                    // IndexedDB unavailable this session - the localStorage mirror still
+                    // guarantees the import survives a refresh instead of vanishing.
+                    countryRecords = merged;
+                    persistCountryRecordsToLocalStorage();
+                }
 
                 try {
                     await saveCountryYearToCloud(year, newRecords, file.name);
                 } catch (cloudErr) {
                     console.error('Country cloud sync failed, saved locally only:', cloudErr);
-                    showToast('Imported locally, but cloud sync failed for this upload.', 'info');
+                    showToast('Imported and saved on this device, but cloud sync failed for this upload.', 'info');
                 }
 
                 fileInput.value = '';
