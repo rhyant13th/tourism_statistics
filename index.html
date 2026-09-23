@@ -296,17 +296,17 @@
                     <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                         <span class="text-xs font-medium text-slate-400 uppercase">AEs Breakdown</span>
                         <div class="mt-2 space-y-2">
-                            <div class="flex justify-between text-sm"><span class="text-slate-600">Local Tourists:</span> <span id="cardLocalTourists" class="font-bold">0</span></div>
-                            <div class="flex justify-between text-sm"><span class="text-slate-600">Foreign Tourists:</span> <span id="cardForeignTourists" class="font-bold">0</span></div>
-                            <div class="flex justify-between text-sm"><span class="text-slate-600">Overseas Filipinos:</span> <span id="cardOverseasFilipinos" class="font-bold">0</span></div>
+                            <div class="flex justify-between text-sm"><span class="text-slate-600">Local Tourists:</span> <span><span id="cardLocalTourists" class="font-bold">0</span> <span id="cardLocalPct" class="text-xs text-slate-400">(0%)</span></span></div>
+                            <div class="flex justify-between text-sm"><span class="text-slate-600">Foreign Tourists:</span> <span><span id="cardForeignTourists" class="font-bold">0</span> <span id="cardForeignPct" class="text-xs text-slate-400">(0%)</span></span></div>
+                            <div class="flex justify-between text-sm"><span class="text-slate-600">Overseas Filipinos:</span> <span><span id="cardOverseasFilipinos" class="font-bold">0</span> <span id="cardOverseasPct" class="text-xs text-slate-400">(0%)</span></span></div>
                         </div>
                     </div>
                     <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                         <span class="text-xs font-medium text-slate-400 uppercase">TAss Breakdown</span>
                         <div class="mt-2 space-y-2">
-                            <div class="flex justify-between text-sm"><span class="text-slate-600">This Municipality (TM):</span> <span id="cardTM" class="font-bold">0</span></div>
-                            <div class="flex justify-between text-sm"><span class="text-slate-600">Other Municipality (OM):</span> <span id="cardOM" class="font-bold">0</span></div>
-                            <div class="flex justify-between text-sm"><span class="text-slate-600">Foreign Residence (FCR):</span> <span id="cardFCR" class="font-bold">0</span></div>
+                            <div class="flex justify-between text-sm"><span class="text-slate-600">This Municipality (TM):</span> <span><span id="cardTM" class="font-bold">0</span> <span id="cardTMPct" class="text-xs text-slate-400">(0%)</span></span></div>
+                            <div class="flex justify-between text-sm"><span class="text-slate-600">Other Municipality (OM):</span> <span><span id="cardOM" class="font-bold">0</span> <span id="cardOMPct" class="text-xs text-slate-400">(0%)</span></span></div>
+                            <div class="flex justify-between text-sm"><span class="text-slate-600">Foreign Residence (FCR):</span> <span><span id="cardFCR" class="font-bold">0</span> <span id="cardFCRPct" class="text-xs text-slate-400">(0%)</span></span></div>
                         </div>
                     </div>
                     <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
@@ -1935,10 +1935,16 @@
             document.getElementById('cardLocalTourists').innerText = totalLocal.toLocaleString();
             document.getElementById('cardForeignTourists').innerText = totalForeign.toLocaleString();
             document.getElementById('cardOverseasFilipinos').innerText = totalOverseas.toLocaleString();
+            document.getElementById('cardLocalPct').innerText = `(${totalAEsArrivals > 0 ? ((totalLocal / totalAEsArrivals) * 100).toFixed(1) : 0}%)`;
+            document.getElementById('cardForeignPct').innerText = `(${totalAEsArrivals > 0 ? ((totalForeign / totalAEsArrivals) * 100).toFixed(1) : 0}%)`;
+            document.getElementById('cardOverseasPct').innerText = `(${totalAEsArrivals > 0 ? ((totalOverseas / totalAEsArrivals) * 100).toFixed(1) : 0}%)`;
 
             document.getElementById('cardTM').innerText = totalTM.toLocaleString();
             document.getElementById('cardOM').innerText = totalOM.toLocaleString();
             document.getElementById('cardFCR').innerText = totalFCR.toLocaleString();
+            document.getElementById('cardTMPct').innerText = `(${totalTAssVisitors > 0 ? ((totalTM / totalTAssVisitors) * 100).toFixed(1) : 0}%)`;
+            document.getElementById('cardOMPct').innerText = `(${totalTAssVisitors > 0 ? ((totalOM / totalTAssVisitors) * 100).toFixed(1) : 0}%)`;
+            document.getElementById('cardFCRPct').innerText = `(${totalTAssVisitors > 0 ? ((totalFCR / totalTAssVisitors) * 100).toFixed(1) : 0}%)`;
 
             document.getElementById('cardTotalMale').innerText = grandMale.toLocaleString();
             document.getElementById('cardTotalFemale').innerText = grandFemale.toLocaleString();
