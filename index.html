@@ -190,6 +190,9 @@
                     <a href="#top-municipalities" onclick="switchTab('top-municipalities')" id="nav-top-municipalities" class="nav-item flex items-center px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 hover:text-white transition">
                         <i class="fa-solid fa-ranking-star w-6 text-center text-base"></i> <span class="ml-2">Top Municipalities</span>
                     </a>
+                    <a href="#country-origin" onclick="switchTab('country-origin')" id="nav-country-origin" class="nav-item flex items-center px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 hover:text-white transition">
+                        <i class="fa-solid fa-earth-asia w-6 text-center text-base"></i> <span class="ml-2">Country of Origin</span>
+                    </a>
                 </div>
 
                 <div class="space-y-1">
@@ -725,12 +728,12 @@
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <h3 class="font-bold text-slate-800 text-sm mb-1">Top 10 Municipalities — Tourist Arrivals (AEs)</h3>
+                        <h3 class="font-bold text-slate-800 text-sm mb-1">Top 11 Municipalities — Tourist Arrivals (AEs)</h3>
                         <p class="text-[11px] text-slate-400 mb-3">Municipalities ranked independently by AEs for the selected year.</p>
                         <div class="h-96"><canvas id="chartTopMuniBarAE"></canvas></div>
                     </div>
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <h3 class="font-bold text-slate-800 text-sm mb-1">Top 10 Municipalities — Same-Day Visitors (TAss)</h3>
+                        <h3 class="font-bold text-slate-800 text-sm mb-1">Top 11 Municipalities — Same-Day Visitors (TAss)</h3>
                         <p class="text-[11px] text-slate-400 mb-3">Municipalities ranked independently by TAss for the selected year.</p>
                         <div class="h-96"><canvas id="chartTopMuniBarTAss"></canvas></div>
                     </div>
@@ -753,6 +756,68 @@
                             <tbody id="topMuniOverallBody" class="divide-y divide-slate-200"></tbody>
                         </table>
                     </div>
+                </div>
+            </section>
+
+            <!-- SECTION 7C: COUNTRY OF ORIGIN (FORM A IMPORT) -->
+            <section id="view-country-origin" class="tab-content hidden space-y-6">
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <h2 class="text-lg font-bold text-slate-800">Country of Origin — Form A Import</h2>
+                    <p class="text-xs text-slate-500 mb-4">Upload a "Form A" Guest Arrivals by Country of Residence file (.xlsx) to see the distribution of foreign travelers per country and the Top 10 source countries.</p>
+                    <div class="flex flex-wrap items-end gap-3">
+                        <div>
+                            <label class="block text-[11px] font-medium text-slate-500 mb-1">Form A File (.xlsx)</label>
+                            <input type="file" id="countryFileInput" accept=".xlsx,.xls" class="admin-only text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-slate-200 file:text-xs">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-medium text-slate-500 mb-1">Reporting Year</label>
+                            <input type="number" id="countryImportYear" placeholder="e.g. 2025" min="2000" max="2100" class="admin-only text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 w-28">
+                        </div>
+                        <button onclick="importCountryFile()" class="admin-only bg-teal-600 text-white text-xs px-4 py-2.5 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-upload mr-1"></i> Import</button>
+                        <p class="text-[11px] text-slate-400">Re-importing the same year (or the same file name) replaces that year's data — nothing is duplicated.</p>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-800">Distribution of Travelers per Country</h3>
+                        <p class="text-[11px] text-slate-400">Foreign country rows only — regional subtotals and Philippine-resident rows are excluded.</p>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <select id="countryYear" onchange="renderCountryReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"></select>
+                        <button onclick="exportCountryExcel()" class="admin-only bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
+                        <button onclick="window.print()" class="bg-slate-800 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-slate-700"><i class="fa-solid fa-print mr-1"></i> Print Report</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                        <h3 class="font-bold text-slate-800 text-sm mb-1">All Countries — <span id="countryYearLbl">2025</span></h3>
+                        <p class="text-[11px] text-slate-400 mb-3">Ranked by total visitor arrivals for the selected period.</p>
+                        <div class="overflow-x-auto custom-scrollbar max-h-[420px]">
+                            <table class="w-full text-xs text-left border-collapse">
+                                <thead class="sticky top-0">
+                                    <tr class="bg-slate-800 text-white uppercase font-semibold">
+                                        <th class="p-3 text-center w-12">Rank</th>
+                                        <th class="p-3">Country</th>
+                                        <th class="p-3 text-right">Total Arrivals</th>
+                                        <th class="p-3 text-right bg-amber-600/40">% Share</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="countryTableBody" class="divide-y divide-slate-200"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <h3 class="font-bold text-slate-800 text-sm mb-4">Top 10 Countries — Share</h3>
+                        <div class="h-64"><canvas id="chartCountryPie"></canvas></div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                    <h3 class="font-bold text-slate-800 text-sm mb-1">Top 10 Countries by Visitor Arrivals</h3>
+                    <p class="text-[11px] text-slate-400 mb-3">Percentage is each country's share of ALL countries for the selected period.</p>
+                    <div class="h-96"><canvas id="chartCountryBar"></canvas></div>
                 </div>
             </section>
 
@@ -1229,12 +1294,13 @@
         
         // IndexedDB Configuration
         const DB_NAME = "TourismDataBankDB";
-        const DB_VERSION = 3;
+        const DB_VERSION = 4;
         let db = null;
 
         // In-Memory Data Collections
         let aeRecords = [];
         let tassRecords = [];
+        let countryRecords = [];
 
         // Temporary parsed bulk upload queues
         let pendingBulkAE = [];
@@ -1306,6 +1372,8 @@
         let chartTopMuniYearObj = null;
         let chartTopMuniBarAEObj = null;
         let chartTopMuniBarTAssObj = null;
+        let chartCountryPieObj = null;
+        let chartCountryBarObj = null;
 
         /**
          * INITIALIZATION & INDEXEDDB STORAGE SETUP
@@ -1369,6 +1437,14 @@
                 const sidebar = document.getElementById('sidebar');
                 sidebar.classList.toggle('hidden');
             });
+
+            // Country of Origin (Form A) records load independently and never block main init
+            syncCountryRecordsFromCloud().then(() => {
+                populateCountryYearSelect();
+                if (document.getElementById('view-country-origin') && !document.getElementById('view-country-origin').classList.contains('hidden')) {
+                    renderCountryReport();
+                }
+            }).catch(() => {});
         };
 
         function initIndexedDB() {
@@ -1387,10 +1463,14 @@
                         const tassStore = db.createObjectStore("tass", { keyPath: "id", autoIncrement: true });
                         tassStore.createIndex("uniqueKey", ["province", "municipality", "year", "month", "attraction"], { unique: true });
                     }
+                    // Store 3: Country of Origin - Form A guest arrivals by country (imported files, no manual CRUD)
+                    if (!db.objectStoreNames.contains("countries")) {
+                        db.createObjectStore("countries", { keyPath: "id", autoIncrement: true });
+                    }
                     // Schema cleanup: drop any object store from an older DB version that
-                    // is no longer part of the schema (only "aes" and "tass" remain).
+                    // is no longer part of the schema (only "aes", "tass" and "countries" remain).
                     Array.from(db.objectStoreNames).forEach(name => {
-                        if (name !== "aes" && name !== "tass") db.deleteObjectStore(name);
+                        if (name !== "aes" && name !== "tass" && name !== "countries") db.deleteObjectStore(name);
                     });
                 };
 
@@ -1499,6 +1579,7 @@
         const CLOUD_AE = "tourism_ae_records";
         const CLOUD_TASS = "tourism_tass_records";
         const CLOUD_COLLECTIONS = { aes: CLOUD_AE, tass: CLOUD_TASS };
+        const CLOUD_COUNTRY_COLLECTION = "tourism_country_records";
 
         function cloudDocId(type, r) {
             const parts = [r.province, r.municipality, r.year, r.month, type === "aes" ? r.establishment : r.attraction];
@@ -1637,6 +1718,66 @@
                 updateCloudStatus("Cloud Save Failed");
                 showToast("Cloud save failed: " + err.message, "danger");
                 return false;
+            }
+        }
+
+        /**
+         * COUNTRY OF ORIGIN (FORM A) — self-contained store/sync, separate from
+         * the aes/tass pipeline above. Import-only (no manual per-record edits),
+         * so it doesn't need the dirty-tracking sync queue those two types use.
+         */
+        function countryDocId(year, country) {
+            return `${year}__${country}`.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").slice(0, 500);
+        }
+
+        async function loadCountryRecordsLocal() {
+            if (!db || !db.objectStoreNames.contains("countries")) { countryRecords = []; return; }
+            countryRecords = await getAllFromStore("countries");
+        }
+
+        async function syncCountryRecordsFromCloud() {
+            try {
+                await loadCountryRecordsLocal();
+                if (!window.cloudReadyPromise) return;
+                await window.cloudReadyPromise;
+                if (!window.cloudDB || !window.cloudFns) return;
+                const { collection, getDocs } = window.cloudFns;
+                const snap = await getDocs(collection(window.cloudDB, CLOUD_COUNTRY_COLLECTION));
+                if (!snap.docs.length) return;
+                const cloudRecords = snap.docs.map(d => { const c = { ...d.data() }; delete c.cloudUpdatedAt; return c; });
+                await clearAndBulkPut("countries", cloudRecords);
+                await loadCountryRecordsLocal();
+            } catch (err) {
+                console.error("Country records cloud sync failed, using local cache:", err);
+            }
+        }
+
+        async function saveCountryYearToCloud(year, records, fileName) {
+            await waitForCloud();
+            const { collection, doc, writeBatch, query, where, getDocs } = window.cloudFns;
+            // Remove old cloud docs for this year and any from a prior import of the same file name
+            const q1 = query(collection(window.cloudDB, CLOUD_COUNTRY_COLLECTION), where("year", "==", year));
+            const snap1 = await getDocs(q1);
+            const q2 = query(collection(window.cloudDB, CLOUD_COUNTRY_COLLECTION), where("sourceFile", "==", fileName));
+            const snap2 = await getDocs(q2);
+            const toDelete = new Map();
+            [...snap1.docs, ...snap2.docs].forEach(d => toDelete.set(d.ref.path, d.ref));
+            const delRefs = Array.from(toDelete.values());
+            for (let i = 0; i < delRefs.length; i += 450) {
+                const batch = writeBatch(window.cloudDB);
+                delRefs.slice(i, i + 450).forEach(ref => batch.delete(ref));
+                await batch.commit();
+            }
+
+            for (let i = 0; i < records.length; i += 450) {
+                const batch = writeBatch(window.cloudDB);
+                records.slice(i, i + 450).forEach(r => {
+                    batch.set(doc(collection(window.cloudDB, CLOUD_COUNTRY_COLLECTION), countryDocId(r.year, r.country)), {
+                        ...r,
+                        cloudUpdatedAt: new Date().toISOString()
+                    });
+                });
+                await batch.commit();
             }
         }
 
@@ -1795,6 +1936,7 @@
             if (tabId === 'top-aes') renderTopAEReport();
             if (tabId === 'top-tass') renderTopTAssReport();
             if (tabId === 'top-municipalities') renderTopMunicipalitiesReport();
+            if (tabId === 'country-origin') renderCountryReport();
         }
 
         function updateSavedDataStatus(){
@@ -1863,11 +2005,8 @@
                 sortedTypes.forEach(t => { html += `<option value="${t}">${t}</option>`; });
                 typeSelect.innerHTML = html;
             }
+            populateCountryYearSelect();
         }
-
-        /**
-         * SECTION 1: DASHBOARD LOGIC & VISUALIZATIONS
-         */
         function refreshDashboard() {
             const yr = document.getElementById('dashYear').value;
             const mo = document.getElementById('dashMonth').value;
@@ -3198,8 +3337,8 @@
             });
 
             // Two independently-ranked horizontal bar charts: Top 10 by AEs, and Top 10 by TAss (each its own ranking, for the selected year)
-            const top10ByAE = [...yearRanked].sort((a, b) => b.ae - a.ae).slice(0, 10);
-            const top10ByTAss = [...yearRanked].sort((a, b) => b.tass - a.tass).slice(0, 10);
+            const top10ByAE = [...yearRanked].sort((a, b) => b.ae - a.ae).slice(0, 11);
+            const top10ByTAss = [...yearRanked].sort((a, b) => b.tass - a.tass).slice(0, 11);
 
             const ctxBarAE = document.getElementById('chartTopMuniBarAE').getContext('2d');
             if (chartTopMuniBarAEObj) chartTopMuniBarAEObj.destroy();
@@ -3335,6 +3474,237 @@
             XLSX.utils.book_append_sheet(wb, wsAll, "Overall All-Years Ranking");
 
             saveWorkbook(wb, `Top_Municipalities_${yr}_and_Overall.xlsx`);
+        }
+
+        /**
+         * SECTION 8C: COUNTRY OF ORIGIN (FORM A IMPORT) — parsing, report, export
+         */
+        const COUNTRY_MONTH_KEYS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+        const COUNTRY_STOPLIST = new Set([
+            'SUB-TOTAL', 'TOTAL PHILIPPINE RESIDENTS', 'TOTAL NON-PHILIPPINE RESIDENTS',
+            'TOTAL OVERSEAS FILIPINO', 'TOTAL GUEST WITH UNIDENTIFIED RESIDENCE',
+            'GRAND TOTAL GUEST ARRIVALS', 'FILIPINO NATIONALITY', 'FOREIGN NATIONALITY',
+            'NO ENCODED COUNTRY OF RESIDENCE', 'UNSPECIFIED', 'PHILIPPINE RESIDENTS', 'NON-PHILIPPINE RESIDENTS'
+        ]);
+
+        function populateCountryYearSelect() {
+            const select = document.getElementById('countryYear');
+            if (!select) return;
+            const years = new Set();
+            countryRecords.forEach(r => { if (r.year) years.add(Number(r.year)); });
+            const sorted = Array.from(years).sort((a, b) => b - a);
+            const currVal = select.value;
+            let html = '<option value="ALL">All Years</option>';
+            sorted.forEach(y => { html += `<option value="${y}">${y}</option>`; });
+            select.innerHTML = html;
+            if (currVal && select.querySelector(`option[value="${currVal}"]`)) select.value = currVal;
+        }
+
+        async function importCountryFile() {
+            if (!requireAdmin('import Form A data')) return;
+            const fileInput = document.getElementById('countryFileInput');
+            const yearInput = document.getElementById('countryImportYear');
+            const file = fileInput.files && fileInput.files[0];
+            const year = parseInt(yearInput.value, 10);
+
+            if (!file) { showToast('Please choose an Excel (.xlsx) file to import.', 'error'); return; }
+            if (!year || year < 2000 || year > 2100) { showToast('Please enter a valid reporting year.', 'error'); return; }
+
+            try {
+                const rows = await readExcelFile(file);
+                const parsed = [];
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    if (!row || row.length === 0) continue;
+                    const rawLabel = row[0];
+                    if (rawLabel === undefined || rawLabel === null || typeof rawLabel !== 'string') continue;
+                    const label = rawLabel.toString().trim();
+                    if (!label) continue;
+                    if (COUNTRY_STOPLIST.has(label.toUpperCase())) continue;
+
+                    const monthly = row.slice(1, 13);
+                    const total = row[13];
+                    const isBlank = v => v === '' || v === undefined || v === null;
+                    if (monthly.length < 12 || monthly.some(isBlank) || isBlank(total)) continue; // region/section header row
+
+                    const rec = { country: label };
+                    COUNTRY_MONTH_KEYS.forEach((key, idx) => { rec[key] = Number(monthly[idx]) || 0; });
+                    rec.total = Number(total) || COUNTRY_MONTH_KEYS.reduce((sum, k) => sum + rec[k], 0);
+                    parsed.push(rec);
+                }
+
+                if (!parsed.length) {
+                    showToast('No country rows were found in this file. Please check that it matches the Form A layout.', 'error');
+                    return;
+                }
+
+                const newRecords = parsed.map(p => ({
+                    ...p, year, sourceFile: file.name, importedAt: new Date().toISOString()
+                }));
+
+                // Overwrite rule: same year OR same source file name replaces prior data
+                const kept = countryRecords.filter(r => Number(r.year) !== year && r.sourceFile !== file.name);
+
+                if (db && db.objectStoreNames.contains('countries')) {
+                    await clearAndBulkPut('countries', [...kept, ...newRecords]);
+                }
+                await loadCountryRecordsLocal();
+
+                try {
+                    await saveCountryYearToCloud(year, newRecords, file.name);
+                } catch (cloudErr) {
+                    console.error('Country cloud sync failed, saved locally only:', cloudErr);
+                    showToast('Imported locally, but cloud sync failed for this upload.', 'info');
+                }
+
+                fileInput.value = '';
+                yearInput.value = '';
+                populateCountryYearSelect();
+                document.getElementById('countryYear').value = String(year);
+                renderCountryReport();
+                showToast(`Imported ${newRecords.length} countries for ${year}.`, 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('Failed to read that file. Please check it is a valid Form A .xlsx export.', 'error');
+            }
+        }
+
+        function getCountryRankedList(yr) {
+            const rows = (yr === 'ALL') ? countryRecords : countryRecords.filter(r => String(r.year) === String(yr));
+            const map = {};
+            rows.forEach(r => {
+                if (!map[r.country]) map[r.country] = { country: r.country, total: 0 };
+                map[r.country].total += Number(r.total || 0);
+            });
+            return Object.values(map).sort((a, b) => b.total - a.total);
+        }
+
+        function renderCountryReport() {
+            const select = document.getElementById('countryYear');
+            if (!select) return;
+            const yr = select.value || 'ALL';
+            document.getElementById('countryYearLbl').innerText = (yr === 'ALL') ? 'All Years' : yr;
+
+            const ranked = getCountryRankedList(yr);
+            const grandTotal = ranked.reduce((sum, x) => sum + x.total, 0);
+            const tbody = document.getElementById('countryTableBody');
+            tbody.innerHTML = '';
+            if (!ranked.length) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-slate-400">No Form A data imported yet. Use the import panel above.</td></tr>`;
+            } else {
+                ranked.forEach((item, idx) => {
+                    const pct = grandTotal > 0 ? ((item.total / grandTotal) * 100).toFixed(1) : '0.0';
+                    const badgeClass = idx === 0 ? 'bg-amber-100 text-amber-800 font-bold' : (idx === 1 ? 'bg-slate-200 text-slate-700' : (idx === 2 ? 'bg-amber-700/20 text-amber-900' : 'bg-slate-100 text-slate-600'));
+                    tbody.innerHTML += `<tr class="hover:bg-slate-50 border-b">
+                        <td class="p-3 text-center"><span class="px-2 py-1 rounded-full text-xs ${badgeClass}">#${idx + 1}</span></td>
+                        <td class="p-3 font-bold text-slate-800">${item.country}</td>
+                        <td class="p-3 text-right">${item.total.toLocaleString()}</td>
+                        <td class="p-3 text-right font-extrabold text-amber-700 text-sm">${pct}%</td>
+                    </tr>`;
+                });
+            }
+
+            const top10 = ranked.slice(0, 10);
+            const hasDL = (typeof ChartDataLabels !== 'undefined');
+            const countryColors = ['#0f766e', '#14b8a6', '#2dd4bf', '#38bdf8', '#60a5fa', '#818cf8', '#a78bfa', '#c084fc', '#f472b6', '#fb7185'];
+
+            const ctxPie = document.getElementById('chartCountryPie').getContext('2d');
+            if (chartCountryPieObj) chartCountryPieObj.destroy();
+            chartCountryPieObj = new Chart(ctxPie, {
+                type: 'doughnut',
+                plugins: hasDL ? [ChartDataLabels] : [],
+                data: {
+                    labels: top10.map(x => x.country),
+                    datasets: [{ data: top10.map(x => x.total), backgroundColor: countryColors }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true, position: 'right', labels: { boxWidth: 12, font: { size: 10 } } },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctxItem) {
+                                    const val = ctxItem.parsed || 0;
+                                    const pct = grandTotal > 0 ? ((val / grandTotal) * 100).toFixed(1) : 0;
+                                    return `${ctxItem.label}: ${val.toLocaleString()} (${pct}% of all countries)`;
+                                }
+                            }
+                        },
+                        datalabels: hasDL ? {
+                            color: '#fff',
+                            font: { weight: 'bold', size: 9 },
+                            textStrokeColor: 'rgba(0,0,0,0.35)',
+                            textStrokeWidth: 2,
+                            formatter: (value) => {
+                                const pct = grandTotal > 0 ? (value / grandTotal) * 100 : 0;
+                                return pct.toFixed(1) + '%';
+                            }
+                        } : undefined
+                    }
+                }
+            });
+
+            const ctxBar = document.getElementById('chartCountryBar').getContext('2d');
+            if (chartCountryBarObj) chartCountryBarObj.destroy();
+            chartCountryBarObj = new Chart(ctxBar, {
+                type: 'bar',
+                plugins: hasDL ? [ChartDataLabels] : [],
+                data: {
+                    labels: top10.map(x => x.country),
+                    datasets: [{ label: 'Visitor Arrivals', data: top10.map(x => x.total), backgroundColor: '#0f766e' }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctxItem) {
+                                    const val = ctxItem.parsed.x || 0;
+                                    const pct = grandTotal > 0 ? ((val / grandTotal) * 100).toFixed(1) : 0;
+                                    return `${val.toLocaleString()} (${pct}% of all countries)`;
+                                }
+                            }
+                        },
+                        datalabels: hasDL ? {
+                            color: '#1e3a8a',
+                            anchor: 'end',
+                            align: 'end',
+                            font: { weight: 'bold', size: 9 },
+                            formatter: (value) => {
+                                const pct = grandTotal > 0 ? (value / grandTotal) * 100 : 0;
+                                return pct.toFixed(1) + '%';
+                            }
+                        } : undefined
+                    }
+                }
+            });
+        }
+
+        function exportCountryExcel() { if (!requireAdmin('download data')) return;
+            const yr = document.getElementById('countryYear').value || 'ALL';
+            const yrLabel = (yr === 'ALL') ? 'All Years' : yr;
+            const ranked = getCountryRankedList(yr);
+            const grandTotal = ranked.reduce((sum, x) => sum + x.total, 0);
+            const rows = ranked.map((x, i) => [i + 1, x.country, x.total, grandTotal > 0 ? Number(((x.total / grandTotal) * 100).toFixed(1)) : 0]);
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet([
+                ["PROVINCIAL GOVERNMENT OF OCCIDENTAL MINDORO"],
+                ["DISTRIBUTION OF TRAVELERS PER COUNTRY (FORM A)"],
+                [`Reporting Period: ${yrLabel} | Generated: ${new Date().toLocaleDateString()}`],
+                ["Rank", "Country", "Total Arrivals", "% Share"],
+                ...rows
+            ]);
+            ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } }, { s: { r: 2, c: 0 }, e: { r: 2, c: 3 } }];
+            ws['A1'].s = excelTitleStyle(); ws['A2'].s = excelTitleStyle(); ws['A3'].s = EXCEL_SUBTITLE_FONT;
+            styleHeaderRow(ws, 3); styleDataNumbers(ws, [0, 2, 3], 4);
+            ws['!freeze'] = { xSplit: 0, ySplit: 4 }; autoWidth(ws, 12, 34);
+            XLSX.utils.book_append_sheet(wb, ws, `Countries ${yrLabel}`.substring(0, 31));
+            saveWorkbook(wb, `Country_Distribution_${yrLabel}.xlsx`);
         }
 
         /**
