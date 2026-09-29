@@ -140,7 +140,7 @@
                     </div>
                     <div>
                        <h1 class="font-bold text-lg leading-tight">Tourism Data Banking System</h1>
-<p class="text-xs text-teal-400 font-medium">Provincial & Municipal Tourism Statistics Portal by <span class="font-bold text-amber-300">RYAN R. TAJONERA</span>, Tourism Operations Officer II</p>
+<p class="text-xs text-teal-400 font-medium">Provincial & Municipal Tourism Statistics Portal developed by <span class="font-bold text-amber-300">RYAN R. TAJONERA</span>, Tourism Operations Officer II</p>
 </div>
                 </div>
             </div>
@@ -548,7 +548,7 @@
 
                 <div id="printAreaAnnual" class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                     <div class="text-center border-b pb-4">
-                        <h3 class="text-xl font-bold uppercase text-navy-900">Annual Tourism Performance Summary</h3>
+                        <h3 id="rptAnnualTitle" class="text-xl font-bold uppercase text-navy-900">Annual Tourism Performance Summary</h3>
                         <p class="text-xs text-slate-500">Reporting Year: <span id="rptAnnualYearLbl" class="font-bold text-slate-700">2026</span> | Month: <span id="rptAnnualMonthLbl" class="font-bold text-slate-700">All Months</span></p>
                     </div>
 
@@ -675,6 +675,7 @@
                         </select>
                         <select id="topAEMuni" onchange="renderTopAEReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="ALL">All Municipalities</option></select>
                         <button onclick="exportTopAEExcel()" class="admin-only bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
+                        <button onclick="window.print()" class="bg-slate-800 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-slate-700"><i class="fa-solid fa-print mr-1"></i> Print Report</button>
                     </div>
                 </div>
 
@@ -733,6 +734,7 @@
                         </select>
                         <select id="topTAssMuni" onchange="renderTopTAssReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2"><option value="ALL">All Municipalities</option></select>
                         <button onclick="exportTopTAssExcel()" class="admin-only bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
+                        <button onclick="window.print()" class="bg-slate-800 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-slate-700"><i class="fa-solid fa-print mr-1"></i> Print Report</button>
                     </div>
                 </div>
 
@@ -3128,6 +3130,7 @@
             const moOk = r => mo === 'ALL' || Number(r.month) === Number(mo);
             document.getElementById('rptAnnualYearLbl').innerText = yr;
             document.getElementById('rptAnnualMonthLbl').innerText = mo === 'ALL' ? 'All Months' : MONTH_NAMES[Number(mo) - 1];
+            document.getElementById('rptAnnualTitle').innerText = mo === 'ALL' ? 'Annual Tourism Performance Summary' : 'Monthly Tourism Statistics Summary';
 
             // Collect all unique municipalities
             const munis = new Set();
