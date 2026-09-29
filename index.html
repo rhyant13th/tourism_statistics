@@ -509,6 +509,13 @@
                         <select id="rptAnnualYear" onchange="renderAnnualReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-teal-500">
                             <!-- populated dynamically -->
                         </select>
+                        <select id="rptAnnualMonth" onchange="renderAnnualReport()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-teal-500">
+                            <option value="ALL">All Months</option>
+                            <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+                            <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+                            <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+                            <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+                        </select>
                         <div class="flex gap-2">
                             <button onclick="exportAnnualReportExcel()" class="admin-only bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
                             <button onclick="window.print()" class="bg-slate-800 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-slate-700"><i class="fa-solid fa-print mr-1"></i> Print Report</button>
@@ -519,7 +526,7 @@
                 <div id="printAreaAnnual" class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                     <div class="text-center border-b pb-4">
                         <h3 class="text-xl font-bold uppercase text-navy-900">Annual Tourism Performance Summary</h3>
-                        <p class="text-xs text-slate-500">Reporting Year: <span id="rptAnnualYearLbl" class="font-bold text-slate-700">2026</span></p>
+                        <p class="text-xs text-slate-500">Reporting Year: <span id="rptAnnualYearLbl" class="font-bold text-slate-700">2026</span> | Month: <span id="rptAnnualMonthLbl" class="font-bold text-slate-700">All Months</span></p>
                     </div>
 
                     <div class="overflow-x-auto custom-scrollbar">
@@ -3014,12 +3021,15 @@
          */
         function renderAnnualReport() {
             const yr = document.getElementById('rptAnnualYear').value || 2026;
+            const mo = document.getElementById('rptAnnualMonth') ? document.getElementById('rptAnnualMonth').value : 'ALL';
+            const moOk = r => mo === 'ALL' || Number(r.month) === Number(mo);
             document.getElementById('rptAnnualYearLbl').innerText = yr;
+            document.getElementById('rptAnnualMonthLbl').innerText = mo === 'ALL' ? 'All Months' : MONTH_NAMES[Number(mo) - 1];
 
             // Collect all unique municipalities
             const munis = new Set();
-            aeRecords.forEach(r => { if (r.year == yr) munis.add(r.municipality); });
-            tassRecords.forEach(r => { if (r.year == yr) munis.add(r.municipality); });
+            aeRecords.forEach(r => { if (r.year == yr && moOk(r)) munis.add(r.municipality); });
+            tassRecords.forEach(r => { if (r.year == yr && moOk(r)) munis.add(r.municipality); });
 
             const sortedMunis = Array.from(munis).sort();
             const tbody = document.getElementById('rptAnnualBody');
@@ -3030,7 +3040,7 @@
 
             sortedMunis.forEach(m => {
                 let local=0, foreign=0, overseas=0;
-                aeRecords.filter(r => r.year == yr && r.municipality === m).forEach(r => {
+                aeRecords.filter(r => r.year == yr && moOk(r) && r.municipality === m).forEach(r => {
                     local += Number(r.local_tourist||0);
                     foreign += Number(r.foreign_tourist||0);
                     overseas += Number(r.overseas_filipino||0);
@@ -3038,7 +3048,7 @@
                 const totalAEs = local + foreign + overseas;
 
                 let tm=0, om=0, fcr=0;
-                tassRecords.filter(r => r.year == yr && r.municipality === m).forEach(r => {
+                tassRecords.filter(r => r.year == yr && moOk(r) && r.municipality === m).forEach(r => {
                     tm += Number(r.tm_sum||0);
                     om += Number(r.om_sum||0);
                     fcr += Number(r.fcr_sum||0);
@@ -3945,19 +3955,21 @@
             saveWorkbook(wb, "Tourism_TAss_Excel_Upload_Template.xlsx");
         }
 
-        function getAnnualReportRows(yr) {
+        function getAnnualReportRows(yr, mo) {
+            mo = mo || 'ALL';
+            const moOk = r => mo === 'ALL' || Number(r.month) === Number(mo);
             const munis = new Set();
-            aeRecords.forEach(r => { if (r.year == yr) munis.add(r.municipality); });
-            tassRecords.forEach(r => { if (r.year == yr) munis.add(r.municipality); });
+            aeRecords.forEach(r => { if (r.year == yr && moOk(r)) munis.add(r.municipality); });
+            tassRecords.forEach(r => { if (r.year == yr && moOk(r)) munis.add(r.municipality); });
             const sortedMunis = Array.from(munis).sort();
             const rows = [];
             let gLocal=0,gForeign=0,gOverseas=0,gAEsTotal=0,gTM=0,gOM=0,gFCR=0,gTAssTotal=0;
             sortedMunis.forEach(m => {
                 let local=0,foreign=0,overseas=0;
-                aeRecords.filter(r=>r.year==yr&&r.municipality===m).forEach(r=>{local+=Number(r.local_tourist||0);foreign+=Number(r.foreign_tourist||0);overseas+=Number(r.overseas_filipino||0);});
+                aeRecords.filter(r=>r.year==yr&&moOk(r)&&r.municipality===m).forEach(r=>{local+=Number(r.local_tourist||0);foreign+=Number(r.foreign_tourist||0);overseas+=Number(r.overseas_filipino||0);});
                 const totalAEs=local+foreign+overseas;
                 let tm=0,om=0,fcr=0;
-                tassRecords.filter(r=>r.year==yr&&r.municipality===m).forEach(r=>{tm+=Number(r.tm_sum||0);om+=Number(r.om_sum||0);fcr+=Number(r.fcr_sum||0);});
+                tassRecords.filter(r=>r.year==yr&&moOk(r)&&r.municipality===m).forEach(r=>{tm+=Number(r.tm_sum||0);om+=Number(r.om_sum||0);fcr+=Number(r.fcr_sum||0);});
                 const totalTAss=tm+om+fcr, combined=totalAEs+totalTAss;
                 gLocal+=local;gForeign+=foreign;gOverseas+=overseas;gAEsTotal+=totalAEs;gTM+=tm;gOM+=om;gFCR+=fcr;gTAssTotal+=totalTAss;
                 rows.push([m,local,foreign,overseas,totalAEs,tm,om,fcr,totalTAss,combined]);
@@ -3968,12 +3980,14 @@
 
         function exportAnnualReportExcel() { if (!requireAdmin('download data')) return;
             const yr = document.getElementById('rptAnnualYear').value || 2026;
-            const rows = getAnnualReportRows(yr);
+            const mo = document.getElementById('rptAnnualMonth') ? document.getElementById('rptAnnualMonth').value : 'ALL';
+            const moLbl = mo === 'ALL' ? 'All Months' : MONTH_NAMES[Number(mo) - 1];
+            const rows = getAnnualReportRows(yr, mo);
             const wb = XLSX.utils.book_new();
             const ws = XLSX.utils.aoa_to_sheet([
                 ["PROVINCIAL GOVERNMENT OF OCCIDENTAL MINDORO"],
                 ["ANNUAL TOURISM PERFORMANCE SUMMARY"],
-                [`Reporting Year: ${yr}`],
+                [`Reporting Year: ${yr} | Month: ${moLbl}`],
                 ["Municipality","Local","Foreign","Overseas","Total AEs","TM","OM","FCR","Total TAss","Combined Visitors"],
                 ...rows
             ]);
@@ -3982,7 +3996,7 @@
             styleHeaderRow(ws,3); styleDataNumbers(ws,[1,2,3,4,5,6,7,8,9],4);
             ws['!freeze']={xSplit:0,ySplit:4}; autoWidth(ws,12,30);
             XLSX.utils.book_append_sheet(wb,ws,"Annual Summary");
-            saveWorkbook(wb,`Annual_Tourism_Summary_${yr}.xlsx`);
+            saveWorkbook(wb,`Annual_Tourism_Summary_${yr}${mo === 'ALL' ? '' : '_' + moLbl}.xlsx`);
         }
 
         function getMonthlyReportRows(yr, mu) {
