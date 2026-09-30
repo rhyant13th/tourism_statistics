@@ -1519,7 +1519,8 @@
                     showToast("Existing local records were migrated to the shared cloud database.", "success");
                 } else if (!cloud.connected) {
                     if (aeRecords.length === 0 && tassRecords.length === 0) {
-                        await preloadSampleData();
+                        // Demo records are no longer auto-created; show the empty state instead.
+                        refreshAllViews();
                     } else {
                         refreshAllViews();
                     }
@@ -1539,7 +1540,8 @@
                 console.error("Database initialization failed:", err);
                 updateCloudStatus("Local Cache Only");
                 if (aeRecords.length === 0 && tassRecords.length === 0) {
-                    try { await preloadSampleData(); } catch (_) {}
+                    // Demo records are no longer auto-created; show the empty state instead.
+                    try { refreshAllViews(); } catch (_) {}
                 } else {
                     refreshAllViews();
                 }
