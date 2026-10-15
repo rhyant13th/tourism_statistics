@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ... keep your existing rules for the other collections ...
+
+    // ACCESS LOG: any signed-in user may ADD their own entry,
+    // only the admin may READ. Nobody can edit or delete from the app.
+    match /tourism_access_logs/{logId} {
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.email == request.auth.token.email.lower();
+      allow read:   if request.auth != null
+                    && request.auth.token.email == "rhyant13th@gmail.com";
+      allow update, delete: if false;
+    }
+  }
+}
