@@ -32,6 +32,7 @@ function requireAdmin(actionName) {
 
 async function handleLogout() {
     try {
+        if (typeof logLogoutEvent === 'function') await logLogoutEvent();
         if (window.firebaseAuthFns && window.firebaseAuth) {
             await window.firebaseAuthFns.signOut(window.firebaseAuth);
         }
@@ -84,6 +85,7 @@ function setupAuth() {
                         shell.classList.add('flex');
                     }
                     applyRoleUI();
+                    if (typeof logSessionStart === 'function') logSessionStart();
                     resolve(user);
                 } else {
                     if (overlay) overlay.classList.remove('hidden');

@@ -31,6 +31,8 @@ function switchTab(tabId) {
     if (tabId === 'top-tass') renderTopTAssReport();
     if (tabId === 'top-municipalities') renderTopMunicipalitiesReport();
     if (tabId === 'country-origin') renderCountryReport();
+    if (tabId === 'access-log') renderAccessLog();
+    if (typeof logTabView === 'function') logTabView(tabId);
 }
 
 function updateSavedDataStatus(){

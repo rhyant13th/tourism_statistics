@@ -57,6 +57,11 @@ const CLOUD_COLLECTIONS = { aes: CLOUD_AE, tass: CLOUD_TASS };
 const CLOUD_COUNTRY_COLLECTION = "tourism_country_records";
 
 /**
+ * ACCESS LOG: one Firestore document per sign-in / page view (see js/access-log.js).
+ */
+const CLOUD_ACCESS_LOG = "tourism_access_logs";
+
+/**
  * COUNTRY OF ORIGIN (FORM A) — self-contained store/sync, separate from
  * the aes/tass pipeline above. Import-only (no manual per-record edits),
  * so it doesn't need the dirty-tracking sync queue those two types use.
