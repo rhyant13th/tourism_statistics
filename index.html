@@ -7,7 +7,19 @@
 
     <!-- Third-party libraries (CDN) -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="js/tailwind-config.js"></script>
+    <script>
+        tailwind.config = {
+          theme: {
+            extend: {
+              colors: {
+                navy: { 700: '#1e293b', 800: '#0f172a', 900: '#020617' },
+                teal: { 500: '#14b8a6', 600: '#0d9488', 700: '#0f766e' }
+              },
+              fontFamily: { sans: ['Inter', 'sans-serif'] }
+            }
+          }
+        };
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -15,12 +27,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
     <!-- Our styles -->
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="styles.css">
 
-    <!-- Settings (admin emails, Firebase keys, database names) -->
-    <script src="js/config.js"></script>
-
-    <!-- Firebase startup. Leave as is; change the keys in js/config.js -->
+    <!-- Firebase startup. Leave as is; change the keys in the SETTINGS section at the top of app.js -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
@@ -37,7 +46,7 @@
         const cloudDB = getFirestore(app);
         const auth = getAuth(app);
 
-        // Expose Firestore + Auth to the app scripts (js/cloud-sync.js, js/auth.js).
+        // Expose Firestore + Auth to the app scripts (app.js).
         window.cloudDB = cloudDB;
         window.cloudFns = { collection, getDocs, getDoc, doc, setDoc, deleteDoc, writeBatch, query, where };
         window.firebaseAuth = auth;
@@ -918,7 +927,8 @@
                             <select id="cmpDataset" onchange="renderComparison()" class="block mt-1 text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 normal-case font-normal text-slate-800">
                                 <option value="ae">Tourist Arrivals (AEs)</option>
                                 <option value="tass">Same-Day Visitors (TAss)</option>
-                                <option value="both">Both (AEs + TAss)</option>
+                                <option value="both">Both (AEs + TAss) – separate graphs</option>
+                                <option value="both1">Both (AEs + TAss) – same graph</option>
                             </select>
                         </label>
                         <label class="text-[11px] font-semibold text-slate-500 uppercase">Compare by
@@ -1374,23 +1384,7 @@
 
     </div><!-- /#appShell -->
 
-    <!-- APPLICATION SCRIPTS: order matters. (js/config.js is loaded in the <head>.) Keep main.js LAST. -->
-    <script src="js/state.js"></script>   <!-- shared variables -->
-    <script src="js/auth.js"></script>   <!-- login & roles -->
-    <script src="js/local-db.js"></script>   <!-- browser database -->
-    <script src="js/cloud-sync.js"></script>   <!-- Firebase sync -->
-    <script src="js/import-helpers.js"></script>   <!-- Excel import helpers -->
-    <script src="js/export-helpers.js"></script>   <!-- Excel export helpers -->
-    <script src="js/ui.js"></script>   <!-- modals, toasts, tabs -->
-    <script src="js/dashboard.js"></script>   <!-- Dashboard -->
-    <script src="js/aes.js"></script>   <!-- Tourist Arrivals (AEs) -->
-    <script src="js/tass.js"></script>   <!-- Same-Day Visitors (TAss) -->
-    <script src="js/reports-summary.js"></script>   <!-- Annual + Monthly reports -->
-    <script src="js/reports-top-lists.js"></script>   <!-- Top 10 + Municipalities -->
-    <script src="js/country-origin.js"></script>   <!-- Country of Origin -->
-    <script src="js/comparison.js"></script>   <!-- Trend Comparison (year vs year) -->
-    <script src="js/backup.js"></script>   <!-- Backup & Restore -->
-    <script src="js/report-date.js"></script>   <!-- "Date generated" stamp -->
-    <script src="js/main.js"></script>   <!-- startup (keep LAST) -->
+    <!-- APPLICATION SCRIPT: everything lives in app.js. Settings (admin email, Firebase keys) are at the top of it. -->
+    <script src="app.js"></script>   <!-- ALL application code (settings, login, database, reports, comparison, startup) -->
 </body>
 </html>
