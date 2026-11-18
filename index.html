@@ -161,6 +161,9 @@
                     <a href="#country-origin" onclick="switchTab('country-origin')" id="nav-country-origin" class="nav-item flex items-center px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 hover:text-white transition">
                         <i class="fa-solid fa-earth-asia w-6 text-center text-base"></i> <span class="ml-2">Country of Origin</span>
                     </a>
+                    <a href="#comparison" onclick="switchTab('comparison')" id="nav-comparison" class="nav-item flex items-center px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 hover:text-white transition">
+                        <i class="fa-solid fa-chart-line w-6 text-center text-base"></i> <span class="ml-2">Trend Comparison</span>
+                    </a>
                 </div>
 
                 <div class="space-y-1">
@@ -888,6 +891,128 @@
                 </div>
             </section>
 
+            <!-- TREND COMPARISON (year vs year) -->
+            <section id="view-comparison" class="tab-content hidden space-y-6">
+                <div class="print-report-header">
+                    <img src="assets/seal-report.png" alt="Official Seal of the Province of Occidental Mindoro">
+                    <div class="prh-text">
+                        <div class="prh-l1">Republic of the Philippines</div>
+                        <div class="prh-l2">Provincial Government of Occidental Mindoro</div>
+                        <div class="prh-l3">Provincial Tourism, Culture and Arts Division</div>
+                        <div class="prh-l4">Planning Development, Data Banking and Administrative Section</div>
+                    </div>
+                </div>
+                <div class="no-print bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <div>
+                            <h2 class="text-lg font-bold text-slate-800">Trend Comparison</h2>
+                            <p class="text-xs text-slate-500">Compare two years to see if arrivals are increasing or declining. Year B is measured against Year A.</p>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <button onclick="exportComparisonExcel()" class="admin-only bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
+                            <button onclick="window.print()" class="bg-slate-800 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-slate-700"><i class="fa-solid fa-print mr-1"></i> Print Report</button>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-end gap-3">
+                        <label class="text-[11px] font-semibold text-slate-500 uppercase">Data
+                            <select id="cmpDataset" onchange="renderComparison()" class="block mt-1 text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 normal-case font-normal text-slate-800">
+                                <option value="ae">Tourist Arrivals (AEs)</option>
+                                <option value="tass">Same-Day Visitors (TAss)</option>
+                                <option value="both">Both (AEs + TAss)</option>
+                            </select>
+                        </label>
+                        <label class="text-[11px] font-semibold text-slate-500 uppercase">Compare by
+                            <select id="cmpMode" onchange="renderComparison()" class="block mt-1 text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 normal-case font-normal text-slate-800">
+                                <option value="monthly">Month (Jan–Dec)</option>
+                                <option value="yearly">Year (totals)</option>
+                            </select>
+                        </label>
+                        <label class="text-[11px] font-semibold text-slate-500 uppercase">Year A (base)
+                            <select id="cmpYearA" onchange="renderComparison()" class="block mt-1 text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 normal-case font-normal text-slate-800"></select>
+                        </label>
+                        <label class="text-[11px] font-semibold text-slate-500 uppercase">Year B
+                            <select id="cmpYearB" onchange="renderComparison()" class="block mt-1 text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 normal-case font-normal text-slate-800"></select>
+                        </label>
+                        <label class="text-[11px] font-semibold text-slate-500 uppercase">Municipality
+                            <select id="cmpMuni" onchange="renderComparison()" class="block mt-1 text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 normal-case font-normal text-slate-800"><option value="ALL">All Municipalities</option></select>
+                        </label>
+                        <label class="flex items-center gap-2 text-xs text-slate-600 pb-2">
+                            <input type="checkbox" id="cmpSameMonths" checked onchange="renderComparison()" class="rounded border-slate-300">
+                            Same months only (fair comparison)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                    <div class="text-center border-b pb-4">
+                        <h3 id="cmpTitleLbl" class="text-xl font-bold uppercase text-navy-900">Comparison</h3>
+                        <p id="cmpScopeLbl" class="text-xs text-slate-500 font-bold"></p>
+                    </div>
+                    <p id="cmpNotice" class="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-3"></p>
+                    <div id="cmpSummary" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div id="cmpChartBox1" class="border border-slate-200 rounded-xl p-4">
+                            <h4 id="cmpChartTitle1" class="font-bold text-slate-800 text-sm mb-2"></h4>
+                            <div class="h-72"><canvas id="chartCmp1"></canvas></div>
+                        </div>
+                        <div id="cmpChartBox2" class="border border-slate-200 rounded-xl p-4 hidden">
+                            <h4 id="cmpChartTitle2" class="font-bold text-slate-800 text-sm mb-2"></h4>
+                            <div class="h-72"><canvas id="chartCmp2"></canvas></div>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto custom-scrollbar">
+                        <table class="w-full text-xs text-left border-collapse">
+                            <thead id="cmpHead"></thead>
+                            <tbody id="cmpTableBody" class="divide-y divide-slate-200"></tbody>
+                            <tfoot id="cmpFoot" class="bg-slate-800 text-white font-bold"></tfoot>
+                        </table>
+                    </div>
+                </div>
+                                <!-- BREAKDOWN: who is rising / declining -->
+                <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                    <div class="no-print flex flex-wrap items-end justify-between gap-3">
+                        <div>
+                            <h3 class="font-bold text-slate-800 text-sm">Breakdown: who is increasing or declining?</h3>
+                            <p class="text-[11px] text-slate-400">Uses the Data, Year A, Year B and "same months only" choices above.</p>
+                        </div>
+                        <div class="flex flex-wrap items-end gap-3">
+                            <label class="text-[11px] font-semibold text-slate-500 uppercase">Break down by
+                                <select id="cmpBreakBy" onchange="cmpRenderBreakdown()" class="block mt-1 text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 normal-case font-normal text-slate-800">
+                                    <option value="muni">Municipality</option>
+                                    <option value="entity">Establishment / Attraction</option>
+                                </select>
+                            </label>
+                            <label class="text-[11px] font-semibold text-slate-500 uppercase">Sort
+                                <select id="cmpBreakSort" onchange="cmpRenderBreakdown()" class="block mt-1 text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 normal-case font-normal text-slate-800">
+                                    <option value="decline">Biggest decline first</option>
+                                    <option value="increase">Biggest increase first</option>
+                                    <option value="volume">Highest Year B first</option>
+                                    <option value="name">Name (A–Z)</option>
+                                </select>
+                            </label>
+                            <button onclick="exportBreakdownExcel()" class="admin-only bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
+                        </div>
+                    </div>
+                    <p id="cmpBreakSummary" class="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3"></p>
+                    <div id="cmpBreakChartBox" class="border border-slate-200 rounded-xl p-4 hidden">
+                        <h4 class="font-bold text-slate-800 text-sm mb-2">Biggest movers (change in visitors)</h4>
+                        <div><canvas id="chartCmpBreak"></canvas></div>
+                    </div>
+                    <div class="overflow-x-auto overflow-y-auto max-h-[28rem] custom-scrollbar">
+                        <table class="w-full text-xs text-left border-collapse">
+                            <thead id="cmpBreakHead" class="sticky top-0"></thead>
+                            <tbody id="cmpBreakBody" class="divide-y divide-slate-200"></tbody>
+                        </table>
+                    </div>
+                </div>
+<div class="report-generated-note border-t border-slate-300 pt-3 mt-4 text-[10px] leading-relaxed text-slate-500">
+                    <p>This report was generated through the Tourism Statistics System by the <strong>Provincial Tourism, Culture and Arts Division &ndash; Planning Development, Data Banking and Administrative Section</strong>. Figures reflect the tourism records encoded in the system as of the date generated.</p>
+                    <p class="mt-1">Prepared by: <strong class="text-slate-700">RYAN R. TAJONERA</strong>, Tourism Operations Officer II &nbsp;|&nbsp; Date generated: <span class="report-gen-date"></span></p>
+                </div>
+            </section>
+
             <!-- SECTION 8: BACKUP & RESTORE VIEW -->
             <section id="view-backup" class="tab-content hidden space-y-6">
                 <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm max-w-3xl mx-auto space-y-6">
@@ -1263,6 +1388,7 @@
     <script src="js/reports-summary.js"></script>   <!-- Annual + Monthly reports -->
     <script src="js/reports-top-lists.js"></script>   <!-- Top 10 + Municipalities -->
     <script src="js/country-origin.js"></script>   <!-- Country of Origin -->
+    <script src="js/comparison.js"></script>   <!-- Trend Comparison (year vs year) -->
     <script src="js/backup.js"></script>   <!-- Backup & Restore -->
     <script src="js/report-date.js"></script>   <!-- "Date generated" stamp -->
     <script src="js/main.js"></script>   <!-- startup (keep LAST) -->
