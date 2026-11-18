@@ -3033,6 +3033,34 @@ function cmpDrawLineMulti(canvasId, datasets) {
     });
 }
 
+function cmpDrawStacked(canvasId, yA, yB, aeA, aeB, taA, taB) {
+    cmpDestroy(canvasId);
+    cmpCharts[canvasId] = new Chart(cmpEl(canvasId).getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: [String(yA), String(yB)],
+            datasets: [
+                { label: 'Tourist Arrivals (AEs)', data: [aeA, aeB], backgroundColor: '#3b82f6' },
+                { label: 'Same-Day Visitors (TAss)', data: [taA, taB], backgroundColor: '#14b8a6' }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom' },
+                datalabels: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: c => `${c.dataset.label}: ${c.parsed.y.toLocaleString()}`,
+                        footer: items => 'Combined: ' + items.reduce((t, i) => t + i.parsed.y, 0).toLocaleString()
+                    }
+                }
+            },
+            scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => v.toLocaleString() } } }
+        }
+    });
+}
+
 function cmpDrawBar(canvasId, labels, labelA, labelB, dataA, dataB) {
     cmpDestroy(canvasId);
     const hasDL = (typeof ChartDataLabels !== 'undefined');
@@ -3063,8 +3091,9 @@ function cmpEmpty(msg) {
     cmpEl('cmpHead').innerHTML = '';
     cmpEl('cmpTableBody').innerHTML = `<tr><td class="p-6 text-center text-slate-400">${msg}</td></tr>`;
     cmpEl('cmpFoot').innerHTML = '';
-    cmpDestroy('chartCmp1'); cmpDestroy('chartCmp2');
+    cmpDestroy('chartCmp1'); cmpDestroy('chartCmp2'); cmpDestroy('chartCmp3');
     cmpEl('cmpChartBox2').classList.add('hidden');
+    cmpEl('cmpChartBox3').classList.add('hidden');
     cmpExportData = null;
     cmpClearBreakdown();
 }
@@ -3215,6 +3244,17 @@ function renderComparison() {
             cmpEl('cmpChartBox2').classList.toggle('hidden', chartKeys.length < 2);
             if (chartKeys.length < 2) cmpDestroy('chartCmp2');
         }
+        // Combined (AEs + TAss) graph
+        if (dataset === 'both') {
+            cmpEl('cmpChartTitle3').textContent = 'Combined visitors (AEs + TAss) — month by month';
+            cmpDrawLine('chartCmp3', CMP_LABELS.combined, String(yA), String(yB),
+                A.map(x => cmpHas(x, 'combined') ? cmpValue(x, 'combined') : null),
+                B.map(x => cmpHas(x, 'combined') ? cmpValue(x, 'combined') : null));
+            cmpEl('cmpChartBox3').classList.remove('hidden');
+        } else {
+            cmpEl('cmpChartBox3').classList.add('hidden');
+            cmpDestroy('chartCmp3');
+        }
     } else {
         // ---- Yearly table (totals + breakdown) ----
         const rows = [];
@@ -3252,6 +3292,14 @@ function renderComparison() {
             String(yA), String(yB), chartRows.map(r => r[1]), chartRows.map(r => r[2]));
         cmpEl('cmpChartBox2').classList.add('hidden');
         cmpDestroy('chartCmp2');
+        if (dataset === 'both') {
+            cmpEl('cmpChartTitle3').textContent = 'Combined visitors (AEs + TAss) — each year, split by type';
+            cmpDrawStacked('chartCmp3', yA, yB, totals.ae.a, totals.ae.b, totals.tass.a, totals.tass.b);
+            cmpEl('cmpChartBox3').classList.remove('hidden');
+        } else {
+            cmpEl('cmpChartBox3').classList.add('hidden');
+            cmpDestroy('chartCmp3');
+        }
     }
 
     cmpExportData = {
