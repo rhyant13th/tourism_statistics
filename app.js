@@ -37,6 +37,9 @@ window.APP_CONFIG = {
  */
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+// Current calendar year - used wherever a default year is needed (so 2027, 2028... work automatically).
+const CURRENT_YEAR = new Date().getFullYear();
+
 // Only this email can edit. Everyone else is view-only.
 const ADMIN_EMAILS = ["rhyant13th@gmail.com"];
 
@@ -886,7 +889,7 @@ function refreshAllViews() {
  * POPULATE FILTER DROPDOWNS DYNAMICALLY
  */
 function populateFilterOptions() {
-    const years = new Set([2026]);
+    const years = new Set([CURRENT_YEAR]);
     const munis = new Set();
     const aeTypes = new Set();
 
@@ -1536,7 +1539,7 @@ function exportAEsExcel(year=null,month='ALL'){if(!requireAdmin('download data')
 
 function downloadAETemplate() { if (!requireAdmin('download data')) return;
     const headers = ["Province/HUC/ICC","Municipality/City","Year","Month","Accommodation Establishment","Type-Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total (L+F)","Total Male","Total Female","Total (M+F)"];
-    const sample = ["Occidental Mindoro","Mamburao",2026,1,"Sample Establishment","Hotel",0,0,0,0,0,0,0];
+    const sample = ["Occidental Mindoro","Mamburao",CURRENT_YEAR,1,"Sample Establishment","Hotel",0,0,0,0,0,0,0];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, makeDataSheet(headers,[sample],[2,6,7,8,9,10,11,12]),"AEs Data");
     XLSX.utils.book_append_sheet(wb, makeInfoSheet("AEs Excel Upload Template","Enter one record per row. Month must be numeric (January=1 ... December=12); month names are also accepted. Year must be a 4-digit number. Total (L+F) and Total (M+F) are recalculated by the system - you may leave them blank or fill them in for reference, but do not enter formulas."),"Instructions");
@@ -1909,7 +1912,7 @@ function exportTAssExcel(year=null,month='ALL'){if(!requireAdmin('download data'
 
 function downloadTAssTemplate() { if (!requireAdmin('download data')) return;
     const headers = ["Province/HUC/ICC","Municipality/City","Year","Month","Tourist Attraction","TM(M)","TM(F)","TM(SUM)","OM(M)","OM(F)","OM(SUM)","FCR(M)","FCR(F)","FCR(SUM)","Total Male","Total Female","Grand Total"];
-    const sample = ["Occidental Mindoro","Mamburao",2026,1,"Sample Attraction",0,0,0,0,0,0,0,0,0,0,0,0];
+    const sample = ["Occidental Mindoro","Mamburao",CURRENT_YEAR,1,"Sample Attraction",0,0,0,0,0,0,0,0,0,0,0,0];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, makeDataSheet(headers,[sample],[2,5,6,7,8,9,10,11,12,13,14,15,16]),"TAss Data");
     XLSX.utils.book_append_sheet(wb, makeInfoSheet("TAss Excel Upload Template","Enter one record per row. Month must be numeric (January=1 ... December=12); month names are also accepted. Year must be a 4-digit number. SUM/Total/Grand Total columns are recalculated by the system - you may leave them blank or fill them in for reference, but do not enter formulas."),"Instructions");
@@ -1928,7 +1931,7 @@ function downloadTAssTemplate() { if (!requireAdmin('download data')) return;
  * SECTION 5: ANNUAL SUMMARY REPORT GENERATION
  */
 function renderAnnualReport() {
-    const yr = document.getElementById('rptAnnualYear').value || 2026;
+    const yr = document.getElementById('rptAnnualYear').value || CURRENT_YEAR;
     const mo = document.getElementById('rptAnnualMonth') ? document.getElementById('rptAnnualMonth').value : 'ALL';
     const moOk = r => mo === 'ALL' || Number(r.month) === Number(mo);
     document.getElementById('rptAnnualYearLbl').innerText = yr;
@@ -2000,7 +2003,7 @@ function renderAnnualReport() {
  * SECTION 6: MONTHLY SUMMARY REPORT GENERATION
  */
 function renderMonthlyReport() {
-    const yr = document.getElementById('rptMonthlyYear').value || 2026;
+    const yr = document.getElementById('rptMonthlyYear').value || CURRENT_YEAR;
     const mu = document.getElementById('rptMonthlyMuni').value;
 
     document.getElementById('rptMonthlyYearLbl').innerText = yr;
@@ -2085,7 +2088,7 @@ function getAnnualReportRows(yr, mo) {
 }
 
 function exportAnnualReportExcel() { if (!requireAdmin('download data')) return;
-    const yr = document.getElementById('rptAnnualYear').value || 2026;
+    const yr = document.getElementById('rptAnnualYear').value || CURRENT_YEAR;
     const mo = document.getElementById('rptAnnualMonth') ? document.getElementById('rptAnnualMonth').value : 'ALL';
     const moLbl = mo === 'ALL' ? 'All Months' : MONTH_NAMES[Number(mo) - 1];
     const rows = getAnnualReportRows(yr, mo);
@@ -2123,7 +2126,7 @@ function getMonthlyReportRows(yr, mu) {
 }
 
 function exportMonthlyReportExcel() { if (!requireAdmin('download data')) return;
-    const yr=document.getElementById('rptMonthlyYear').value||2026;
+    const yr=document.getElementById('rptMonthlyYear').value|| CURRENT_YEAR;
     const mu=document.getElementById('rptMonthlyMuni').value;
     const scope=mu==='ALL'?'All Municipalities':mu;
     const wb=XLSX.utils.book_new();
@@ -2154,7 +2157,7 @@ function exportMonthlyReportExcel() { if (!requireAdmin('download data')) return
  * SECTION 7: TOP 10 ACCOMMODATION ESTABLISHMENTS RANKINGS
  */
 function renderTopAEReport() {
-    const yr = document.getElementById('topAEYear').value || 2026;
+    const yr = document.getElementById('topAEYear').value || CURRENT_YEAR;
     const mo = document.getElementById('topAEMonth').value;
     const mu = document.getElementById('topAEMuni').value;
 
@@ -2211,7 +2214,7 @@ function renderTopAEReport() {
  * SECTION 8: TOP 10 TOURIST ATTRACTIONS RANKINGS
  */
 function renderTopTAssReport() {
-    const yr = document.getElementById('topTAssYear').value || 2026;
+    const yr = document.getElementById('topTAssYear').value || CURRENT_YEAR;
     const mo = document.getElementById('topTAssMonth').value;
     const mu = document.getElementById('topTAssMuni').value;
 
@@ -2292,7 +2295,7 @@ function getMuniCombinedMap(yr, metric = 'combined') {
 }
 
 function renderTopMunicipalitiesReport() {
-    const yr = document.getElementById('topMuniYear').value || 2026;
+    const yr = document.getElementById('topMuniYear').value || CURRENT_YEAR;
     const metric = document.getElementById('topMuniMetric').value || 'combined';
     const yearFilter = (yr === 'ALL') ? null : yr;
     document.getElementById('topMuniYearLbl').innerText = (yr === 'ALL') ? 'All Years' : yr;
@@ -2475,7 +2478,7 @@ function renderTopMunicipalitiesReport() {
 }
 
 function exportTopMunicipalitiesExcel() { if (!requireAdmin('download data')) return;
-    const yr = document.getElementById('topMuniYear').value || 2026;
+    const yr = document.getElementById('topMuniYear').value || CURRENT_YEAR;
     const metric = document.getElementById('topMuniMetric').value || 'combined';
     const metricLabel = TOP_MUNI_METRIC_LABELS[metric];
     const yearFilter = (yr === 'ALL') ? null : yr;
@@ -2515,7 +2518,7 @@ function exportTopMunicipalitiesExcel() { if (!requireAdmin('download data')) re
 }
 
 function getTopAERows() {
-    const yr=document.getElementById('topAEYear').value||2026,mo=document.getElementById('topAEMonth').value,mu=document.getElementById('topAEMuni').value;
+    const yr=document.getElementById('topAEYear').value|| CURRENT_YEAR,mo=document.getElementById('topAEMonth').value,mu=document.getElementById('topAEMuni').value;
     const estMap={};
     aeRecords.forEach(r=>{
         if(r.year!=yr)return;if(mo!=='ALL'&&r.month!=mo)return;if(mu!=='ALL'&&r.municipality!==mu)return;
@@ -2527,7 +2530,7 @@ function getTopAERows() {
 }
 
 function exportTopAEExcel() { if (!requireAdmin('download data')) return;
-    const yr=document.getElementById('topAEYear').value||2026,mo=document.getElementById('topAEMonth').value,mu=document.getElementById('topAEMuni').value;
+    const yr=document.getElementById('topAEYear').value|| CURRENT_YEAR,mo=document.getElementById('topAEMonth').value,mu=document.getElementById('topAEMuni').value;
     const wb=XLSX.utils.book_new();
     const rows=getTopAERows().map((x,i)=>[i+1,x.establishment,x.municipality,x.type,x.count]);
     const ws=XLSX.utils.aoa_to_sheet([["PROVINCIAL GOVERNMENT OF OCCIDENTAL MINDORO"],["TOP 10 ACCOMMODATION ESTABLISHMENTS"],[`Year: ${yr} | Month: ${mo==='ALL'?'Entire Year':MONTH_NAMES[mo-1]} | Scope: ${mu==='ALL'?'All Municipalities':mu}`],["Rank","Accommodation Establishment","Municipality","Type / Class","Tourist Arrivals"],...rows]);
@@ -2535,7 +2538,7 @@ function exportTopAEExcel() { if (!requireAdmin('download data')) return;
 }
 
 function getTopTAssRows() {
-    const yr=document.getElementById('topTAssYear').value||2026,mo=document.getElementById('topTAssMonth').value,mu=document.getElementById('topTAssMuni').value;
+    const yr=document.getElementById('topTAssYear').value|| CURRENT_YEAR,mo=document.getElementById('topTAssMonth').value,mu=document.getElementById('topTAssMuni').value;
     const map={};
     tassRecords.forEach(r=>{
         if(r.year!=yr)return;if(mo!=='ALL'&&r.month!=mo)return;if(mu!=='ALL'&&r.municipality!==mu)return;
@@ -2547,7 +2550,7 @@ function getTopTAssRows() {
 }
 
 function exportTopTAssExcel() { if (!requireAdmin('download data')) return;
-    const yr=document.getElementById('topTAssYear').value||2026,mo=document.getElementById('topTAssMonth').value,mu=document.getElementById('topTAssMuni').value;
+    const yr=document.getElementById('topTAssYear').value|| CURRENT_YEAR,mo=document.getElementById('topTAssMonth').value,mu=document.getElementById('topTAssMuni').value;
     const wb=XLSX.utils.book_new();
     const rows=getTopTAssRows().map((x,i)=>[i+1,x.attraction,x.municipality,x.count]);
     const ws=XLSX.utils.aoa_to_sheet([["PROVINCIAL GOVERNMENT OF OCCIDENTAL MINDORO"],["TOP 10 TOURIST ATTRACTIONS"],[`Year: ${yr} | Month: ${mo==='ALL'?'Entire Year':MONTH_NAMES[mo-1]} | Scope: ${mu==='ALL'?'All Municipalities':mu}`],["Rank","Tourist Attraction","Municipality","Same-Day Visitors"],...rows]);
@@ -3148,6 +3151,7 @@ function renderComparison() {
     } else if (new Set(counts).size > 1) {
         notice += '<strong class="text-amber-700">The years do not cover the same number of months, so totals may mislead. Tick "same months only" for a fair comparison.</strong>';
     }
+    if (dataset !== 'both') notice += ' <span class="text-teal-700 font-semibold">Tip: choose "Both (AEs + TAss)" in Data to see the combined AEs + TAss graphs.</span>';
     cmpEl('cmpNotice').innerHTML = notice;
 
     const sum = (arr, fn) => arr.reduce((s, x, i) => s + (mask[i] ? fn(x) : 0), 0);
@@ -3267,6 +3271,7 @@ function renderComparison() {
             cmpDestroy('chartCmp2');
         } else {
             const chartKeys = dataset === 'both' ? ['ae', 'tass'] : [dataset];
+            cmpEl('cmpChartBox2').classList.toggle('hidden', chartKeys.length < 2);
             chartKeys.forEach((k, idx) => {
                 cmpEl('cmpChartTitle' + (idx + 1)).textContent = `${CMP_LABELS[k]} — month by month`;
                 cmpDrawLineMulti('chartCmp' + (idx + 1), labels, perYear(k));
@@ -3275,9 +3280,9 @@ function renderComparison() {
             if (chartKeys.length < 2) cmpDestroy('chartCmp2');
         }
         if (dataset === 'both') {
+            cmpEl('cmpChartBox3').classList.remove('hidden');
             cmpEl('cmpChartTitle3').textContent = 'Combined visitors (AEs + TAss) — month by month';
             cmpDrawLineMulti('chartCmp3', labels, perYear('combined'));
-            cmpEl('cmpChartBox3').classList.remove('hidden');
         } else {
             cmpEl('cmpChartBox3').classList.add('hidden');
             cmpDestroy('chartCmp3');
@@ -3326,9 +3331,9 @@ function renderComparison() {
         cmpEl('cmpChartBox2').classList.add('hidden');
         cmpDestroy('chartCmp2');
         if (dataset === 'both') {
+            cmpEl('cmpChartBox3').classList.remove('hidden');
             cmpEl('cmpChartTitle3').textContent = 'Combined visitors (AEs + TAss) — each year, split by type';
             cmpDrawStacked('chartCmp3', years.map(String), years.map(y => totals.ae[y]), years.map(y => totals.tass[y]));
-            cmpEl('cmpChartBox3').classList.remove('hidden');
         } else {
             cmpEl('cmpChartBox3').classList.add('hidden');
             cmpDestroy('chartCmp3');
@@ -3699,6 +3704,8 @@ async function handleRestoreExcelFile(event) {
  * INITIALIZATION & INDEXEDDB STORAGE SETUP
  */
 window.onload = async function() {
+    // Default year in the Add forms follows the calendar year
+    ['ae_year', 'tass_year'].forEach(id => { const el = document.getElementById(id); if (el) el.value = CURRENT_YEAR; });
     try {
         // Wait for login before loading any data
         await setupAuth();
