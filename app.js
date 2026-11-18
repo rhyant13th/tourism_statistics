@@ -2925,6 +2925,12 @@ function populateCompareControls() {
     // Default: latest year (B) compared against the year before it (A)
     yB.value = (prevB && sy.includes(Number(prevB))) ? prevB : String(sy[0] || '');
     yA.value = (prevA && sy.includes(Number(prevA))) ? prevA : String(sy[1] || sy[0] || '');
+    const sy2 = cmpEl('cmpStackYear');
+    if (sy2) {
+        const prevS = sy2.value;
+        sy2.innerHTML = html;
+        if (prevS && sy.includes(Number(prevS))) sy2.value = prevS; else sy2.value = yB.value;
+    }
     const sortedMunis = Array.from(munis).sort();
     mu.innerHTML = '<option value="ALL">All Municipalities</option>' +
         sortedMunis.map(m => `<option value="${cmpEsc(m)}">${cmpEsc(m)}</option>`).join('');
@@ -3094,6 +3100,7 @@ function cmpEmpty(msg) {
     cmpDestroy('chartCmp1'); cmpDestroy('chartCmp2'); cmpDestroy('chartCmp3');
     cmpEl('cmpChartBox2').classList.add('hidden');
     cmpEl('cmpChartBox3').classList.add('hidden');
+    cmpEl('cmpChartBox4').classList.add('hidden'); cmpDestroy('chartCmp4');
     cmpExportData = null;
     cmpClearBreakdown();
 }
@@ -3309,6 +3316,49 @@ function renderComparison() {
         file: `Tourism_Comparison_${mode}_${yA}_vs_${yB}.xlsx`
     };
     cmpRenderBreakdown();
+    cmpRenderStackMonthly();
+}
+
+/** 5th graph: AEs + TAss stacked, month by month, for ONE chosen year. */
+function cmpRenderStackMonthly() {
+    const box = cmpEl('cmpChartBox4');
+    if (!box) return;
+    const raw = cmpEl('cmpDataset').value;
+    const yearSel = cmpEl('cmpStackYear');
+    if (!(raw === 'both' || raw === 'both1') || !yearSel.value) {
+        box.classList.add('hidden'); cmpDestroy('chartCmp4'); return;
+    }
+    const year = Number(yearSel.value), muni = cmpEl('cmpMuni').value || 'ALL';
+    const M = cmpAggregate(year, muni);
+    const ae = M.map(x => x.local + x.foreign + x.overseas);
+    const ta = M.map(x => x.tm + x.om + x.fcr);
+    cmpEl('cmpChartTitle4').textContent = `Combined visitors (AEs + TAss) per month — stacked, ${year}`;
+    box.classList.remove('hidden');
+    cmpDestroy('chartCmp4');
+    cmpCharts['chartCmp4'] = new Chart(cmpEl('chartCmp4').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: MONTH_NAMES.map(m => m.substring(0, 3)),
+            datasets: [
+                { label: 'Tourist Arrivals (AEs)', data: ae, backgroundColor: '#3b82f6' },
+                { label: 'Same-Day Visitors (TAss)', data: ta, backgroundColor: '#14b8a6' }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom' },
+                datalabels: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: c => `${c.dataset.label}: ${c.parsed.y.toLocaleString()}`,
+                        footer: items => 'Combined: ' + items.reduce((t, i) => t + i.parsed.y, 0).toLocaleString()
+                    }
+                }
+            },
+            scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => v.toLocaleString() } } }
+        }
+    });
 }
 
 function exportComparisonExcel() {
