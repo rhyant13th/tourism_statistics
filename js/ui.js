@@ -31,6 +31,7 @@ function switchTab(tabId) {
     if (tabId === 'top-tass') renderTopTAssReport();
     if (tabId === 'top-municipalities') renderTopMunicipalitiesReport();
     if (tabId === 'country-origin') renderCountryReport();
+    if (tabId === 'comparison') renderComparison();
 }
 
 function updateSavedDataStatus(){
@@ -100,6 +101,7 @@ function populateFilterOptions() {
         typeSelect.innerHTML = html;
     }
     populateCountryYearSelect();
+    if (typeof populateCompareControls === 'function') populateCompareControls();
 }
 
 /**
