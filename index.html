@@ -915,7 +915,7 @@
                     <div class="flex flex-wrap items-center justify-between gap-4">
                         <div>
                             <h2 class="text-lg font-bold text-slate-800">Trend Comparison</h2>
-                            <p class="text-xs text-slate-500">Compare two years to see if arrivals are increasing or declining. Year B is measured against Year A.</p>
+                            <p class="text-xs text-slate-500">Compare two or more years (optionally only certain months, e.g. Jan–Jun) to see if arrivals are increasing or declining. The latest year is measured against the year before it.</p>
                         </div>
                         <div class="flex items-center space-x-3">
                             <button onclick="exportComparisonExcel()" class="admin-only bg-teal-600 text-white text-xs px-3.5 py-2 rounded-lg font-medium hover:bg-teal-700"><i class="fa-solid fa-file-excel mr-1"></i> Export Excel</button>
@@ -937,11 +937,14 @@
                                 <option value="yearly">Year (totals)</option>
                             </select>
                         </label>
-                        <label class="text-[11px] font-semibold text-slate-500 uppercase">Year A (base)
-                            <select id="cmpYearA" onchange="renderComparison()" class="block mt-1 text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 normal-case font-normal text-slate-800"></select>
+                        <div class="text-[11px] font-semibold text-slate-500 uppercase">Years to compare <span class="normal-case font-normal text-slate-400">(tick 2 or more)</span>
+                            <div id="cmpYearBox" class="flex flex-wrap gap-2 mt-1"></div>
+                        </div>
+                        <label class="text-[11px] font-semibold text-slate-500 uppercase">Months from
+                            <select id="cmpMonthFrom" onchange="renderComparison()" class="block mt-1 text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 normal-case font-normal text-slate-800"><option value="1" selected>January</option><option value="2">February</option><option value="3">March</option><option value="4">April</option><option value="5">May</option><option value="6">June</option><option value="7">July</option><option value="8">August</option><option value="9">September</option><option value="10">October</option><option value="11">November</option><option value="12">December</option></select>
                         </label>
-                        <label class="text-[11px] font-semibold text-slate-500 uppercase">Year B
-                            <select id="cmpYearB" onchange="renderComparison()" class="block mt-1 text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 normal-case font-normal text-slate-800"></select>
+                        <label class="text-[11px] font-semibold text-slate-500 uppercase">to
+                            <select id="cmpMonthTo" onchange="renderComparison()" class="block mt-1 text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 normal-case font-normal text-slate-800"><option value="1">January</option><option value="2">February</option><option value="3">March</option><option value="4">April</option><option value="5">May</option><option value="6">June</option><option value="7">July</option><option value="8">August</option><option value="9">September</option><option value="10">October</option><option value="11">November</option><option value="12" selected>December</option></select>
                         </label>
                         <label class="text-[11px] font-semibold text-slate-500 uppercase">Municipality
                             <select id="cmpMuni" onchange="renderComparison()" class="block mt-1 text-xs bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 normal-case font-normal text-slate-800"><option value="ALL">All Municipalities</option></select>
@@ -998,7 +1001,7 @@
                     <div class="no-print flex flex-wrap items-end justify-between gap-3">
                         <div>
                             <h3 class="font-bold text-slate-800 text-sm">Breakdown: who is increasing or declining?</h3>
-                            <p class="text-[11px] text-slate-400">Uses the Data, Year A, Year B and "same months only" choices above.</p>
+                            <p class="text-[11px] text-slate-400">Uses the Data, Years, Months and "same months only" choices above. Change = latest selected year vs the year before it.</p>
                         </div>
                         <div class="flex flex-wrap items-end gap-3">
                             <label class="text-[11px] font-semibold text-slate-500 uppercase">Break down by

@@ -2892,48 +2892,72 @@ function exportCountryExcel() { if (!requireAdmin('download data')) return;
 // ##############################################################################
 
 /**
- * TREND COMPARISON: compare two years (e.g. 2025 vs 2026) by month or by year,
- * for Tourist Arrivals (AEs), Same-Day Visitors (TAss), or both.
- * Shows summary cards (increasing / declining), a data table, graphs, and Excel export.
+ * TREND COMPARISON: compare ONE OR MORE years (e.g. 2024, 2025, 2026), by month or by year,
+ * for Tourist Arrivals (AEs), Same-Day Visitors (TAss), or both - optionally limited to a
+ * month range (e.g. Jan-Jun of every selected year).
+ * Trend = the latest selected year compared with the year before it; with 3+ years every
+ * consecutive pair (2025 vs 2024, 2026 vs 2025, ...) is shown.
  */
 
 const CMP_SHORT = { ae: 'AEs', tass: 'TAss', combined: 'Combined' };
 const CMP_LABELS = { ae: 'Tourist Arrivals (AEs)', tass: 'Same-Day Visitors (TAss)', combined: 'Combined Visitors' };
-const CMP_COLOR_A = '#f59e0b';
-const CMP_COLOR_B = '#0f766e';
+const CMP_PALETTE = ['#f59e0b', '#0f766e', '#3b82f6', '#db2777', '#7c3aed', '#dc2626', '#0284c7', '#65a30d', '#9333ea', '#059669'];
 const cmpCharts = {};
 let cmpExportData = null;
+let cmpBreakExport = null;
 
 function cmpEl(id) { return document.getElementById(id); }
 function cmpEsc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function cmpSigned(n) { return (n > 0 ? '+' : '') + n.toLocaleString(); }
+function cmpColor(years, y) { return CMP_PALETTE[years.indexOf(y) % CMP_PALETTE.length]; }
+function cmpPairs(years) { const p = []; for (let i = 1; i < years.length; i++) p.push([years[i - 1], years[i]]); return p; }
 
-/** Fill the Year A / Year B / Municipality dropdowns from the saved data. */
+/** Years ticked in the "Years" box, oldest first. */
+function cmpSelectedYears() {
+    return Array.from(document.querySelectorAll('.cmp-year-cb')).filter(c => c.checked).map(c => Number(c.value)).sort((a, b) => a - b);
+}
+
+/** Month range chosen (0-based indexes, always low..high). */
+function cmpMonthRange() {
+    const f = Number(cmpEl('cmpMonthFrom').value) || 1, t = Number(cmpEl('cmpMonthTo').value) || 12;
+    const lo = Math.min(f, t) - 1, hi = Math.max(f, t) - 1;
+    const idxs = []; for (let i = lo; i <= hi; i++) idxs.push(i);
+    const full = lo === 0 && hi === 11;
+    const label = full ? 'All months' : (lo === hi ? MONTH_NAMES[lo] : `${MONTH_NAMES[lo].substring(0, 3)}–${MONTH_NAMES[hi].substring(0, 3)}`);
+    return { lo, hi, idxs, full, label };
+}
+
+/** Fill the year tick-boxes, municipality list and the stacked-graph year from the saved data. */
 function populateCompareControls() {
-    const yA = cmpEl('cmpYearA'), yB = cmpEl('cmpYearB'), mu = cmpEl('cmpMuni');
-    if (!yA || !yB || !mu) return;
+    const box = cmpEl('cmpYearBox'), mu = cmpEl('cmpMuni');
+    if (!box || !mu) return;
     const years = new Set(), munis = new Set();
     aeRecords.concat(tassRecords).forEach(r => {
         if (r.year) years.add(Number(r.year));
         if (r.municipality) munis.add(r.municipality);
     });
     const sy = Array.from(years).sort((a, b) => b - a);
-    const html = sy.length ? sy.map(y => `<option value="${y}">${y}</option>`).join('') : '<option value="">No data</option>';
-    const prevA = yA.value, prevB = yB.value, prevM = mu.value;
-    yA.innerHTML = html;
-    yB.innerHTML = html;
-    // Default: latest year (B) compared against the year before it (A)
-    yB.value = (prevB && sy.includes(Number(prevB))) ? prevB : String(sy[0] || '');
-    yA.value = (prevA && sy.includes(Number(prevA))) ? prevA : String(sy[1] || sy[0] || '');
+
+    const existing = box.querySelectorAll('.cmp-year-cb');
+    const hadBoxes = existing.length > 0;
+    const prev = new Set(Array.from(existing).filter(c => c.checked).map(c => Number(c.value)));
+    const defaults = new Set(sy.slice(0, 2)); // first time: latest two years
+    box.innerHTML = sy.length
+        ? sy.map(y => `<label class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer"><input type="checkbox" class="cmp-year-cb rounded border-slate-300" value="${y}" ${(hadBoxes ? prev.has(y) : defaults.has(y)) ? 'checked' : ''} onchange="renderComparison()"> ${y}</label>`).join('')
+        : '<span class="text-xs text-slate-400">No data yet</span>';
+
     const sy2 = cmpEl('cmpStackYear');
     if (sy2) {
         const prevS = sy2.value;
-        sy2.innerHTML = html;
-        if (prevS && sy.includes(Number(prevS))) sy2.value = prevS; else sy2.value = yB.value;
+        sy2.innerHTML = sy.map(y => `<option value="${y}">${y}</option>`).join('');
+        const sel = cmpSelectedYears();
+        if (prevS && sy.includes(Number(prevS))) sy2.value = prevS;
+        else sy2.value = String(sel.length ? sel[sel.length - 1] : (sy[0] || ''));
     }
-    const sortedMunis = Array.from(munis).sort();
+
+    const prevM = mu.value;
     mu.innerHTML = '<option value="ALL">All Municipalities</option>' +
-        sortedMunis.map(m => `<option value="${cmpEsc(m)}">${cmpEsc(m)}</option>`).join('');
+        Array.from(munis).sort().map(m => `<option value="${cmpEsc(m)}">${cmpEsc(m)}</option>`).join('');
     if (prevM && munis.has(prevM)) mu.value = prevM;
 }
 
@@ -2976,6 +3000,10 @@ function cmpTrend(a, b) {
     if (pct < -0.5) return { label: 'Declining', icon: 'fa-arrow-trend-down', badge: 'bg-rose-100 text-rose-800', pct };
     return { label: 'Stable', icon: 'fa-minus', badge: 'bg-slate-100 text-slate-700', pct };
 }
+function cmpPctText(a, b) {
+    if (a > 0) { const p = ((b - a) / a) * 100; return (p > 0 ? '+' : '') + p.toFixed(1) + '%'; }
+    return b > 0 ? 'new' : '—';
+}
 
 /** Two table cells (change + % change) with colour/arrow. */
 function cmpChangeCells(a, b, ok) {
@@ -2983,8 +3011,7 @@ function cmpChangeCells(a, b, ok) {
     const d = b - a;
     const cls = d > 0 ? 'text-emerald-700' : (d < 0 ? 'text-rose-600' : 'text-slate-500');
     const arrow = d > 0 ? '▲' : (d < 0 ? '▼' : '●');
-    const pctTxt = a > 0 ? (d > 0 ? '+' : '') + ((d / a) * 100).toFixed(1) + '%' : (b > 0 ? 'new' : '—');
-    return `<td class="p-2 text-right font-semibold ${cls}">${cmpSigned(d)}</td><td class="p-2 text-right font-semibold ${cls}">${arrow} ${pctTxt}</td>`;
+    return `<td class="p-2 text-right font-semibold ${cls}">${cmpSigned(d)}</td><td class="p-2 text-right font-semibold ${cls}">${arrow} ${cmpPctText(a, b)}</td>`;
 }
 function cmpChangeExport(a, b, ok) {
     if (!ok) return ['', ''];
@@ -2994,36 +3021,13 @@ function cmpChangeExport(a, b, ok) {
 
 function cmpDestroy(id) { if (cmpCharts[id]) { cmpCharts[id].destroy(); delete cmpCharts[id]; } }
 
-function cmpDrawLine(canvasId, title, labelA, labelB, dataA, dataB) {
+/** Line chart: one line per dataset ({label, data, color, dash}). */
+function cmpDrawLineMulti(canvasId, labels, datasets) {
     cmpDestroy(canvasId);
     cmpCharts[canvasId] = new Chart(cmpEl(canvasId).getContext('2d'), {
         type: 'line',
         data: {
-            labels: MONTH_NAMES.map(m => m.substring(0, 3)),
-            datasets: [
-                { label: labelA, data: dataA, borderColor: CMP_COLOR_A, backgroundColor: CMP_COLOR_A, tension: 0.3, spanGaps: false, pointRadius: 4 },
-                { label: labelB, data: dataB, borderColor: CMP_COLOR_B, backgroundColor: CMP_COLOR_B, tension: 0.3, spanGaps: false, pointRadius: 4 }
-            ]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { position: 'bottom' },
-                datalabels: { display: false },
-                tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y === null ? 'no data' : c.parsed.y.toLocaleString()}` } }
-            },
-            scales: { y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString() } } }
-        }
-    });
-}
-
-function cmpDrawLineMulti(canvasId, datasets) {
-    cmpDestroy(canvasId);
-    cmpCharts[canvasId] = new Chart(cmpEl(canvasId).getContext('2d'), {
-        type: 'line',
-        data: {
-            labels: MONTH_NAMES.map(m => m.substring(0, 3)),
+            labels,
             datasets: datasets.map(d => ({ label: d.label, data: d.data, borderColor: d.color, backgroundColor: d.color, borderDash: d.dash || [], tension: 0.3, spanGaps: false, pointRadius: 3 }))
         },
         options: {
@@ -3039,47 +3043,14 @@ function cmpDrawLineMulti(canvasId, datasets) {
     });
 }
 
-function cmpDrawStacked(canvasId, yA, yB, aeA, aeB, taA, taB) {
-    cmpDestroy(canvasId);
-    cmpCharts[canvasId] = new Chart(cmpEl(canvasId).getContext('2d'), {
-        type: 'bar',
-        data: {
-            labels: [String(yA), String(yB)],
-            datasets: [
-                { label: 'Tourist Arrivals (AEs)', data: [aeA, aeB], backgroundColor: '#3b82f6' },
-                { label: 'Same-Day Visitors (TAss)', data: [taA, taB], backgroundColor: '#14b8a6' }
-            ]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: {
-                legend: { position: 'bottom' },
-                datalabels: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: c => `${c.dataset.label}: ${c.parsed.y.toLocaleString()}`,
-                        footer: items => 'Combined: ' + items.reduce((t, i) => t + i.parsed.y, 0).toLocaleString()
-                    }
-                }
-            },
-            scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => v.toLocaleString() } } }
-        }
-    });
-}
-
-function cmpDrawBar(canvasId, labels, labelA, labelB, dataA, dataB) {
+/** Grouped bar chart: one bar series per dataset ({label, data, color}). */
+function cmpDrawBar(canvasId, labels, datasets) {
     cmpDestroy(canvasId);
     const hasDL = (typeof ChartDataLabels !== 'undefined');
     cmpCharts[canvasId] = new Chart(cmpEl(canvasId).getContext('2d'), {
         type: 'bar',
         plugins: hasDL ? [ChartDataLabels] : [],
-        data: {
-            labels,
-            datasets: [
-                { label: labelA, data: dataA, backgroundColor: CMP_COLOR_A, borderRadius: 4 },
-                { label: labelB, data: dataB, backgroundColor: CMP_COLOR_B, borderRadius: 4 }
-            ]
-        },
+        data: { labels, datasets: datasets.map(d => ({ label: d.label, data: d.data, backgroundColor: d.color, borderRadius: 4 })) },
         options: {
             responsive: true, maintainAspectRatio: false,
             plugins: {
@@ -3091,257 +3062,16 @@ function cmpDrawBar(canvasId, labels, labelA, labelB, dataA, dataB) {
     });
 }
 
-function cmpEmpty(msg) {
-    cmpEl('cmpSummary').innerHTML = '';
-    cmpEl('cmpNotice').innerHTML = '';
-    cmpEl('cmpHead').innerHTML = '';
-    cmpEl('cmpTableBody').innerHTML = `<tr><td class="p-6 text-center text-slate-400">${msg}</td></tr>`;
-    cmpEl('cmpFoot').innerHTML = '';
-    cmpDestroy('chartCmp1'); cmpDestroy('chartCmp2'); cmpDestroy('chartCmp3');
-    cmpEl('cmpChartBox2').classList.add('hidden');
-    cmpEl('cmpChartBox3').classList.add('hidden');
-    cmpEl('cmpChartBox4').classList.add('hidden'); cmpDestroy('chartCmp4');
-    cmpExportData = null;
-    cmpClearBreakdown();
-}
-
-function renderComparison() {
-    if (!cmpEl('view-comparison')) return;
-    if (!cmpEl('cmpYearA').options.length || !cmpEl('cmpYearA').value) populateCompareControls();
-
-    const rawDataset = cmpEl('cmpDataset').value;   // ae | tass | both | both1 (both on one graph)
-    const sameGraph = rawDataset === 'both1';
-    const dataset = sameGraph ? 'both' : rawDataset;
-    const mode = cmpEl('cmpMode').value;             // monthly | yearly
-    const yA = Number(cmpEl('cmpYearA').value), yB = Number(cmpEl('cmpYearB').value);
-    const muni = cmpEl('cmpMuni').value || 'ALL';
-    const same = cmpEl('cmpSameMonths').checked;
-
-    if (!yA || !yB) { cmpEmpty('No saved data yet. Upload or encode records first.'); return; }
-
-    const A = cmpAggregate(yA, muni), B = cmpAggregate(yB, muni);
-    const base = dataset === 'both' ? ['ae', 'tass'] : [dataset];
-    const keys = dataset === 'both' ? ['ae', 'tass', 'combined'] : [dataset];
-    const scope = muni === 'ALL' ? 'All Municipalities' : muni;
-    const dsLabel = dataset === 'both' ? 'AEs + TAss (Both)' : CMP_LABELS[dataset];
-
-    cmpEl('cmpTitleLbl').textContent = `${mode === 'monthly' ? 'Monthly' : 'Yearly'} Comparison: ${yA} vs ${yB}`;
-    cmpEl('cmpScopeLbl').textContent = `${dsLabel} | ${scope}`;
-
-    // Months that have data in BOTH years for the selected dataset(s)
-    const mask = A.map((_, i) => !same || base.every(k => cmpHas(A[i], k) && cmpHas(B[i], k)));
-    const monthsA = A.filter(x => base.every(k => cmpHas(x, k))).length;
-    const monthsB = B.filter(x => base.every(k => cmpHas(x, k))).length;
-    const used = mask.filter(Boolean).length;
-    const usedNames = MONTH_NAMES.filter((_, i) => mask[i]).map(m => m.substring(0, 3)).join(', ');
-
-    let notice = `<i class="fa-solid fa-circle-info mr-1"></i> Months with data: <strong>${yA}</strong> = ${monthsA}, <strong>${yB}</strong> = ${monthsB}. `;
-    if (same) {
-        notice += used
-            ? `Totals use only the ${used} month(s) present in both years (${usedNames}) so the comparison is fair.`
-            : 'The two years have no month in common, so there is nothing to total.';
-    } else if (monthsA !== monthsB) {
-        notice += '<strong class="text-amber-700">The years do not cover the same number of months, so totals may mislead. Tick "same months only" for a fair comparison.</strong>';
-    }
-    if (yA === yB) notice += ' <strong class="text-amber-700">Year A and Year B are the same year.</strong>';
-    cmpEl('cmpNotice').innerHTML = notice;
-
-    const sum = (arr, fn) => arr.reduce((s, x, i) => s + (mask[i] ? fn(x) : 0), 0);
-
-    // ---- Summary cards (totals over the compared months) ----
-    const totals = {};
-    keys.forEach(k => { totals[k] = { a: sum(A, x => cmpValue(x, k)), b: sum(B, x => cmpValue(x, k)) }; });
-
-    cmpEl('cmpSummary').innerHTML = keys.map(k => {
-        const t = totals[k], tr = cmpTrend(t.a, t.b), d = t.b - t.a;
-        const pctTxt = tr.pct === null ? (t.b > 0 && t.a === 0 ? 'new' : '—') : (tr.pct > 0 ? '+' : '') + tr.pct.toFixed(1) + '%';
-        let extra = '';
-        if (mode === 'monthly') {
-            let up = 0, down = 0, n = 0;
-            for (let i = 0; i < 12; i++) {
-                if (!(cmpHas(A[i], k) && cmpHas(B[i], k) && mask[i])) continue;
-                n++;
-                const va = cmpValue(A[i], k), vb = cmpValue(B[i], k);
-                if (vb > va) up++; else if (vb < va) down++;
-            }
-            extra = `<p class="text-[11px] text-slate-500 mt-2">${yB} was higher in <strong>${up}</strong> and lower in <strong>${down}</strong> of ${n} comparable month(s).</p>`;
-        }
-        return `<div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <div class="flex items-start justify-between gap-2">
-                <p class="text-xs font-bold text-slate-500 uppercase">${CMP_LABELS[k]}</p>
-                <span class="px-2 py-1 rounded-full text-[11px] font-bold ${tr.badge}"><i class="fa-solid ${tr.icon} mr-1"></i>${tr.label}</span>
-            </div>
-            <p class="text-2xl font-extrabold text-slate-800 mt-2">${pctTxt}</p>
-            <p class="text-xs text-slate-500 mt-1">${cmpSigned(d)} visitors from ${yA} to ${yB}</p>
-            <div class="grid grid-cols-2 gap-2 mt-3 text-xs">
-                <div class="bg-amber-50 rounded-lg p-2"><span class="text-slate-500">${yA}</span><br><strong class="text-amber-800 text-sm">${t.a.toLocaleString()}</strong></div>
-                <div class="bg-teal-50 rounded-lg p-2"><span class="text-slate-500">${yB}</span><br><strong class="text-teal-800 text-sm">${t.b.toLocaleString()}</strong></div>
-            </div>
-            ${extra}
-        </div>`;
-    }).join('');
-
-    const exportHead = [], exportRows = [];
-    let numericCols = [];
-
-    if (mode === 'monthly') {
-        // ---- Monthly table ----
-        let head1 = '<tr class="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-300"><th class="p-2 border" rowspan="2">Month</th>';
-        let head2 = '<tr class="bg-slate-50 text-slate-600 font-bold border-b border-slate-300">';
-        exportHead.push('Month');
-        keys.forEach(k => {
-            head1 += `<th class="p-2 border text-center" colspan="4">${CMP_LABELS[k]}</th>`;
-            head2 += `<th class="p-2 border text-right">${yA}</th><th class="p-2 border text-right">${yB}</th><th class="p-2 border text-right">Change</th><th class="p-2 border text-right">% Change</th>`;
-            exportHead.push(`${CMP_SHORT[k]} ${yA}`, `${CMP_SHORT[k]} ${yB}`, `${CMP_SHORT[k]} Change`, `${CMP_SHORT[k]} % Change`);
-        });
-        cmpEl('cmpHead').innerHTML = head1 + '</tr>' + head2 + '</tr>';
-
-        let body = '';
-        for (let i = 0; i < 12; i++) {
-            const dim = (same && !mask[i]) ? ' opacity-50' : '';
-            let tr = `<tr class="hover:bg-slate-50 border-b${dim}"><td class="p-2 font-bold text-slate-800">${MONTH_NAMES[i]}</td>`;
-            const exRow = [MONTH_NAMES[i]];
-            keys.forEach(k => {
-                const hA = cmpHas(A[i], k), hB = cmpHas(B[i], k);
-                const a = cmpValue(A[i], k), b = cmpValue(B[i], k);
-                tr += `<td class="p-2 text-right bg-amber-50/40">${hA ? a.toLocaleString() : '<span class="text-slate-300">—</span>'}</td>`;
-                tr += `<td class="p-2 text-right bg-teal-50/40">${hB ? b.toLocaleString() : '<span class="text-slate-300">—</span>'}</td>`;
-                tr += cmpChangeCells(a, b, hA && hB);
-                exRow.push(hA ? a : '', hB ? b : '', ...cmpChangeExport(a, b, hA && hB));
-            });
-            body += tr + '</tr>';
-            exportRows.push(exRow);
-        }
-        cmpEl('cmpTableBody').innerHTML = body;
-
-        let foot = `<tr><td class="p-2">TOTAL${same ? ' (same months)' : ''}</td>`;
-        const exFoot = ['TOTAL'];
-        keys.forEach(k => {
-            const t = totals[k];
-            foot += `<td class="p-2 text-right">${t.a.toLocaleString()}</td><td class="p-2 text-right">${t.b.toLocaleString()}</td>`;
-            foot += cmpChangeCells(t.a, t.b, true).replace(/text-emerald-700/g, 'text-emerald-300').replace(/text-rose-600/g, 'text-rose-300').replace(/text-slate-500/g, 'text-slate-300');
-            exFoot.push(t.a, t.b, ...cmpChangeExport(t.a, t.b, true));
-        });
-        cmpEl('cmpFoot').innerHTML = foot + '</tr>';
-        exportRows.push(exFoot);
-        numericCols = exportHead.map((_, c) => c).filter(c => c > 0 && ((c - 1) % 4) < 3);
-
-        // ---- Monthly charts ----
-        if (sameGraph) {
-            // AEs and TAss together on ONE graph (solid = AEs, dashed = TAss)
-            const series = (arr, k) => arr.map(x => cmpHas(x, k) ? cmpValue(x, k) : null);
-            cmpEl('cmpChartTitle1').textContent = `AEs and TAss together — month by month (solid = AEs, dashed = TAss)`;
-            cmpDrawLineMulti('chartCmp1', [
-                { label: `AEs ${yA}`, data: series(A, 'ae'), color: CMP_COLOR_A },
-                { label: `AEs ${yB}`, data: series(B, 'ae'), color: CMP_COLOR_B },
-                { label: `TAss ${yA}`, data: series(A, 'tass'), color: CMP_COLOR_A, dash: [6, 4] },
-                { label: `TAss ${yB}`, data: series(B, 'tass'), color: CMP_COLOR_B, dash: [6, 4] }
-            ]);
-            cmpEl('cmpChartBox2').classList.add('hidden');
-            cmpDestroy('chartCmp2');
-        } else {
-            const chartKeys = dataset === 'both' ? ['ae', 'tass'] : [dataset];
-            chartKeys.forEach((k, idx) => {
-                const n = idx + 1;
-                cmpEl('cmpChartTitle' + n).textContent = `${CMP_LABELS[k]} — month by month`;
-                cmpDrawLine('chartCmp' + n, CMP_LABELS[k], String(yA), String(yB),
-                    A.map(x => cmpHas(x, k) ? cmpValue(x, k) : null),
-                    B.map(x => cmpHas(x, k) ? cmpValue(x, k) : null));
-            });
-            cmpEl('cmpChartBox2').classList.toggle('hidden', chartKeys.length < 2);
-            if (chartKeys.length < 2) cmpDestroy('chartCmp2');
-        }
-        // Combined (AEs + TAss) graph
-        if (dataset === 'both') {
-            cmpEl('cmpChartTitle3').textContent = 'Combined visitors (AEs + TAss) — month by month';
-            cmpDrawLine('chartCmp3', CMP_LABELS.combined, String(yA), String(yB),
-                A.map(x => cmpHas(x, 'combined') ? cmpValue(x, 'combined') : null),
-                B.map(x => cmpHas(x, 'combined') ? cmpValue(x, 'combined') : null));
-            cmpEl('cmpChartBox3').classList.remove('hidden');
-        } else {
-            cmpEl('cmpChartBox3').classList.add('hidden');
-            cmpDestroy('chartCmp3');
-        }
-    } else {
-        // ---- Yearly table (totals + breakdown) ----
-        const rows = [];
-        const addAE = () => {
-            rows.push(['Local Tourist', sum(A, x => x.local), sum(B, x => x.local), false]);
-            rows.push(['Foreign Tourist', sum(A, x => x.foreign), sum(B, x => x.foreign), false]);
-            rows.push(['Overseas Filipino', sum(A, x => x.overseas), sum(B, x => x.overseas), false]);
-            rows.push(['TOTAL TOURIST ARRIVALS (AEs)', totals.ae.a, totals.ae.b, true]);
-        };
-        const addTA = () => {
-            rows.push(['Same-Day (TM)', sum(A, x => x.tm), sum(B, x => x.tm), false]);
-            rows.push(['Same-Day (OM)', sum(A, x => x.om), sum(B, x => x.om), false]);
-            rows.push(['Same-Day (FCR)', sum(A, x => x.fcr), sum(B, x => x.fcr), false]);
-            rows.push(['TOTAL SAME-DAY VISITORS (TAss)', totals.tass.a, totals.tass.b, true]);
-        };
-        if (dataset !== 'tass') addAE();
-        if (dataset !== 'ae') addTA();
-        if (dataset === 'both') rows.push(['COMBINED VISITORS', totals.combined.a, totals.combined.b, true]);
-
-        cmpEl('cmpHead').innerHTML = `<tr class="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-300">
-            <th class="p-2 border">Category</th><th class="p-2 border text-right">${yA}</th><th class="p-2 border text-right">${yB}</th>
-            <th class="p-2 border text-right">Change</th><th class="p-2 border text-right">% Change</th></tr>`;
-        exportHead.push('Category', String(yA), String(yB), 'Change', '% Change');
-        cmpEl('cmpTableBody').innerHTML = rows.map(([label, a, b, isTotal]) =>
-            `<tr class="border-b ${isTotal ? 'bg-slate-100 font-bold' : 'hover:bg-slate-50'}"><td class="p-2 ${isTotal ? 'text-slate-900' : 'text-slate-700'}">${label}</td>
-             <td class="p-2 text-right">${a.toLocaleString()}</td><td class="p-2 text-right">${b.toLocaleString()}</td>${cmpChangeCells(a, b, true)}</tr>`).join('');
-        rows.forEach(([label, a, b]) => exportRows.push([label, a, b, ...cmpChangeExport(a, b, true)]));
-        cmpEl('cmpFoot').innerHTML = '';
-        numericCols = [1, 2, 3];
-
-        // ---- Yearly chart ----
-        const chartRows = dataset === 'both' ? rows.filter(r => r[3]) : rows;
-        cmpEl('cmpChartTitle1').textContent = `${yA} vs ${yB} — ${dsLabel}`;
-        cmpDrawBar('chartCmp1', chartRows.map(r => r[0].replace('TOTAL ', 'Total ').replace('COMBINED VISITORS', 'Combined')),
-            String(yA), String(yB), chartRows.map(r => r[1]), chartRows.map(r => r[2]));
-        cmpEl('cmpChartBox2').classList.add('hidden');
-        cmpDestroy('chartCmp2');
-        if (dataset === 'both') {
-            cmpEl('cmpChartTitle3').textContent = 'Combined visitors (AEs + TAss) — each year, split by type';
-            cmpDrawStacked('chartCmp3', yA, yB, totals.ae.a, totals.ae.b, totals.tass.a, totals.tass.b);
-            cmpEl('cmpChartBox3').classList.remove('hidden');
-        } else {
-            cmpEl('cmpChartBox3').classList.add('hidden');
-            cmpDestroy('chartCmp3');
-        }
-    }
-
-    cmpExportData = {
-        title: `${mode === 'monthly' ? 'MONTHLY' : 'YEARLY'} TOURISM TREND COMPARISON`,
-        sub: `${yA} vs ${yB} | ${dsLabel} | ${scope}${same ? ' | Same months only' : ''}`,
-        head: exportHead, rows: exportRows, numericCols,
-        file: `Tourism_Comparison_${mode}_${yA}_vs_${yB}.xlsx`
-    };
-    cmpRenderBreakdown();
-    cmpRenderStackMonthly();
-}
-
-/** 5th graph: AEs + TAss stacked, month by month, for ONE chosen year. */
-function cmpRenderStackMonthly() {
-    const box = cmpEl('cmpChartBox4');
-    if (!box) return;
-    const raw = cmpEl('cmpDataset').value;
-    const yearSel = cmpEl('cmpStackYear');
-    if (!(raw === 'both' || raw === 'both1') || !yearSel.value) {
-        box.classList.add('hidden'); cmpDestroy('chartCmp4'); return;
-    }
-    const year = Number(yearSel.value), muni = cmpEl('cmpMuni').value || 'ALL';
-    const M = cmpAggregate(year, muni);
-    const ae = M.map(x => x.local + x.foreign + x.overseas);
-    const ta = M.map(x => x.tm + x.om + x.fcr);
-    cmpEl('cmpChartTitle4').textContent = `Combined visitors (AEs + TAss) per month — stacked, ${year}`;
-    box.classList.remove('hidden');
-    cmpDestroy('chartCmp4');
-    cmpCharts['chartCmp4'] = new Chart(cmpEl('chartCmp4').getContext('2d'), {
+/** Stacked bars: AEs + TAss stacked (x = labels). */
+function cmpDrawStacked(canvasId, labels, aeData, taData) {
+    cmpDestroy(canvasId);
+    cmpCharts[canvasId] = new Chart(cmpEl(canvasId).getContext('2d'), {
         type: 'bar',
         data: {
-            labels: MONTH_NAMES.map(m => m.substring(0, 3)),
+            labels,
             datasets: [
-                { label: 'Tourist Arrivals (AEs)', data: ae, backgroundColor: '#3b82f6' },
-                { label: 'Same-Day Visitors (TAss)', data: ta, backgroundColor: '#14b8a6' }
+                { label: 'Tourist Arrivals (AEs)', data: aeData, backgroundColor: '#3b82f6' },
+                { label: 'Same-Day Visitors (TAss)', data: taData, backgroundColor: '#14b8a6' }
             ]
         },
         options: {
@@ -3359,6 +3089,279 @@ function cmpRenderStackMonthly() {
             scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => v.toLocaleString() } } }
         }
     });
+}
+
+function cmpEmpty(msg) {
+    cmpEl('cmpSummary').innerHTML = '';
+    cmpEl('cmpNotice').innerHTML = '';
+    cmpEl('cmpHead').innerHTML = '';
+    cmpEl('cmpTableBody').innerHTML = `<tr><td class="p-6 text-center text-slate-400">${msg}</td></tr>`;
+    cmpEl('cmpFoot').innerHTML = '';
+    ['chartCmp1', 'chartCmp2', 'chartCmp3', 'chartCmp4'].forEach(cmpDestroy);
+    ['cmpChartBox2', 'cmpChartBox3', 'cmpChartBox4'].forEach(id => cmpEl(id).classList.add('hidden'));
+    cmpExportData = null;
+    cmpClearBreakdown();
+}
+
+function renderComparison() {
+    if (!cmpEl('view-comparison')) return;
+    if (!document.querySelectorAll('.cmp-year-cb').length) populateCompareControls();
+
+    const rawDataset = cmpEl('cmpDataset').value;   // ae | tass | both | both1 (both on one graph)
+    const sameGraph = rawDataset === 'both1';
+    const dataset = sameGraph ? 'both' : rawDataset;
+    const mode = cmpEl('cmpMode').value;             // monthly | yearly
+    const muni = cmpEl('cmpMuni').value || 'ALL';
+    const same = cmpEl('cmpSameMonths').checked;
+    const years = cmpSelectedYears();
+    const range = cmpMonthRange();
+
+    if (!document.querySelectorAll('.cmp-year-cb').length) { cmpEmpty('No saved data yet. Upload or encode records first.'); return; }
+    if (years.length < 2) { cmpEmpty('Tick at least two years in the "Years" box to compare.'); return; }
+
+    const first = years[0], prevY = years[years.length - 2], lastY = years[years.length - 1];
+    const pairs = cmpPairs(years);
+    const agg = {};
+    years.forEach(y => { agg[y] = cmpAggregate(y, muni); });
+    const base = dataset === 'both' ? ['ae', 'tass'] : [dataset];
+    const keys = dataset === 'both' ? ['ae', 'tass', 'combined'] : [dataset];
+    const scope = muni === 'ALL' ? 'All Municipalities' : muni;
+    const dsLabel = dataset === 'both' ? 'AEs + TAss (Both)' : CMP_LABELS[dataset];
+    const yearsTxt = years.join(' vs ');
+
+    cmpEl('cmpTitleLbl').textContent = `${mode === 'monthly' ? 'Monthly' : 'Yearly'} Comparison: ${yearsTxt}`;
+    cmpEl('cmpScopeLbl').textContent = `${dsLabel} | ${scope} | ${range.label}`;
+
+    // Months that count: inside the chosen range AND (optionally) with data in EVERY selected year
+    const hasAll = i => years.every(y => base.every(k => cmpHas(agg[y][i], k)));
+    const mask = Array.from({ length: 12 }, (_, i) => range.idxs.includes(i) && (!same || hasAll(i)));
+    const used = mask.filter(Boolean).length;
+    const usedNames = MONTH_NAMES.filter((_, i) => mask[i]).map(m => m.substring(0, 3)).join(', ');
+    const counts = years.map(y => range.idxs.filter(i => base.every(k => cmpHas(agg[y][i], k))).length);
+
+    let notice = `<i class="fa-solid fa-circle-info mr-1"></i> Months with data (${range.label}): ` +
+        years.map((y, n) => `<strong>${y}</strong> = ${counts[n]}`).join(', ') + '. ';
+    if (same) {
+        notice += used
+            ? `Totals use only the ${used} month(s) present in every selected year (${usedNames}) so the comparison is fair.`
+            : 'The selected years have no month in common, so there is nothing to total.';
+    } else if (new Set(counts).size > 1) {
+        notice += '<strong class="text-amber-700">The years do not cover the same number of months, so totals may mislead. Tick "same months only" for a fair comparison.</strong>';
+    }
+    cmpEl('cmpNotice').innerHTML = notice;
+
+    const sum = (arr, fn) => arr.reduce((s, x, i) => s + (mask[i] ? fn(x) : 0), 0);
+
+    // ---- Totals per series per year (over the counted months) ----
+    const totals = {};
+    keys.forEach(k => { totals[k] = {}; years.forEach(y => { totals[k][y] = sum(agg[y], x => cmpValue(x, k)); }); });
+
+    // ---- Summary cards: latest year vs the year before, plus every year's total ----
+    cmpEl('cmpSummary').innerHTML = keys.map(k => {
+        const a = totals[k][prevY], b = totals[k][lastY], tr = cmpTrend(a, b), d = b - a;
+        const pctTxt = tr.pct === null ? (b > 0 && a === 0 ? 'new' : '—') : (tr.pct > 0 ? '+' : '') + tr.pct.toFixed(1) + '%';
+        const rows = years.map((y, n) => {
+            const chip = n === 0 ? '<span class="text-slate-300">base</span>' : (() => {
+                const p = totals[k][years[n - 1]], c = totals[k][y], dd = c - p;
+                const cls = dd > 0 ? 'text-emerald-700' : (dd < 0 ? 'text-rose-600' : 'text-slate-500');
+                return `<span class="font-semibold ${cls}">${dd > 0 ? '▲' : (dd < 0 ? '▼' : '●')} ${cmpPctText(p, c)}</span>`;
+            })();
+            return `<div class="flex items-center justify-between py-1 border-b border-slate-100 last:border-0">
+                <span class="flex items-center gap-1.5"><span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${cmpColor(years, y)}"></span><strong>${y}</strong></span>
+                <span class="text-slate-800 font-bold">${totals[k][y].toLocaleString()}</span>${chip}</div>`;
+        }).join('');
+        let extra = '';
+        if (mode === 'monthly') {
+            let up = 0, down = 0, n = 0;
+            for (let i = 0; i < 12; i++) {
+                if (!(mask[i] && cmpHas(agg[prevY][i], k) && cmpHas(agg[lastY][i], k))) continue;
+                n++;
+                const va = cmpValue(agg[prevY][i], k), vb = cmpValue(agg[lastY][i], k);
+                if (vb > va) up++; else if (vb < va) down++;
+            }
+            extra = `<p class="text-[11px] text-slate-500 mt-2">${lastY} was higher than ${prevY} in <strong>${up}</strong> and lower in <strong>${down}</strong> of ${n} comparable month(s).</p>`;
+        }
+        return `<div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+            <div class="flex items-start justify-between gap-2">
+                <p class="text-xs font-bold text-slate-500 uppercase">${CMP_LABELS[k]}</p>
+                <span class="px-2 py-1 rounded-full text-[11px] font-bold ${tr.badge}"><i class="fa-solid ${tr.icon} mr-1"></i>${tr.label}</span>
+            </div>
+            <p class="text-2xl font-extrabold text-slate-800 mt-2">${pctTxt}</p>
+            <p class="text-xs text-slate-500 mt-1">${lastY} vs ${prevY}: ${cmpSigned(d)} visitors</p>
+            <div class="mt-3 text-xs">${rows}</div>
+            ${extra}
+        </div>`;
+    }).join('');
+
+    const exportHead = [], exportRows = [];
+    let numericCols = [];
+
+    if (mode === 'monthly') {
+        // ---- Monthly table (only the months in the chosen range) ----
+        const span = years.length + 2 * pairs.length;
+        let head1 = '<tr class="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-300"><th class="p-2 border" rowspan="2">Month</th>';
+        let head2 = '<tr class="bg-slate-50 text-slate-600 font-bold border-b border-slate-300">';
+        exportHead.push('Month');
+        let col = 1;
+        keys.forEach(k => {
+            head1 += `<th class="p-2 border text-center" colspan="${span}">${CMP_LABELS[k]}</th>`;
+            years.forEach((y, n) => {
+                head2 += `<th class="p-2 border text-right" style="color:${cmpColor(years, y)}">${y}</th>`;
+                exportHead.push(`${CMP_SHORT[k]} ${y}`); numericCols.push(col++);
+            });
+            pairs.forEach(([p, c]) => {
+                head2 += `<th class="p-2 border text-right">Change ${c} vs ${p}</th><th class="p-2 border text-right">% ${c} vs ${p}</th>`;
+                exportHead.push(`${CMP_SHORT[k]} Change ${c} vs ${p}`, `${CMP_SHORT[k]} % ${c} vs ${p}`);
+                numericCols.push(col); col += 2;
+            });
+        });
+        cmpEl('cmpHead').innerHTML = head1 + '</tr>' + head2 + '</tr>';
+
+        let body = '';
+        range.idxs.forEach(i => {
+            const dim = (same && !mask[i]) ? ' opacity-50' : '';
+            let tr = `<tr class="hover:bg-slate-50 border-b${dim}"><td class="p-2 font-bold text-slate-800">${MONTH_NAMES[i]}</td>`;
+            const exRow = [MONTH_NAMES[i]];
+            keys.forEach(k => {
+                years.forEach(y => {
+                    const h = cmpHas(agg[y][i], k), v = cmpValue(agg[y][i], k);
+                    tr += `<td class="p-2 text-right">${h ? v.toLocaleString() : '<span class="text-slate-300">—</span>'}</td>`;
+                    exRow.push(h ? v : '');
+                });
+                pairs.forEach(([p, c]) => {
+                    const ok = cmpHas(agg[p][i], k) && cmpHas(agg[c][i], k);
+                    const a = cmpValue(agg[p][i], k), b = cmpValue(agg[c][i], k);
+                    tr += cmpChangeCells(a, b, ok);
+                    exRow.push(...cmpChangeExport(a, b, ok));
+                });
+            });
+            body += tr + '</tr>';
+            exportRows.push(exRow);
+        });
+        cmpEl('cmpTableBody').innerHTML = body;
+
+        let foot = `<tr><td class="p-2">TOTAL${same ? ' (same months)' : ''}</td>`;
+        const exFoot = ['TOTAL'];
+        keys.forEach(k => {
+            years.forEach(y => { foot += `<td class="p-2 text-right">${totals[k][y].toLocaleString()}</td>`; exFoot.push(totals[k][y]); });
+            pairs.forEach(([p, c]) => {
+                const a = totals[k][p], b = totals[k][c];
+                foot += cmpChangeCells(a, b, true).replace(/text-emerald-700/g, 'text-emerald-300').replace(/text-rose-600/g, 'text-rose-300').replace(/text-slate-500/g, 'text-slate-300');
+                exFoot.push(...cmpChangeExport(a, b, true));
+            });
+        });
+        cmpEl('cmpFoot').innerHTML = foot + '</tr>';
+        exportRows.push(exFoot);
+
+        // ---- Monthly charts ----
+        const labels = range.idxs.map(i => MONTH_NAMES[i].substring(0, 3));
+        const line = (k, y) => range.idxs.map(i => cmpHas(agg[y][i], k) ? cmpValue(agg[y][i], k) : null);
+        const perYear = k => years.map(y => ({ label: String(y), data: line(k, y), color: cmpColor(years, y) }));
+        if (sameGraph) {
+            cmpEl('cmpChartTitle1').textContent = 'AEs and TAss together — month by month (solid = AEs, dashed = TAss)';
+            cmpDrawLineMulti('chartCmp1', labels, [
+                ...years.map(y => ({ label: `AEs ${y}`, data: line('ae', y), color: cmpColor(years, y) })),
+                ...years.map(y => ({ label: `TAss ${y}`, data: line('tass', y), color: cmpColor(years, y), dash: [6, 4] }))
+            ]);
+            cmpEl('cmpChartBox2').classList.add('hidden');
+            cmpDestroy('chartCmp2');
+        } else {
+            const chartKeys = dataset === 'both' ? ['ae', 'tass'] : [dataset];
+            chartKeys.forEach((k, idx) => {
+                cmpEl('cmpChartTitle' + (idx + 1)).textContent = `${CMP_LABELS[k]} — month by month`;
+                cmpDrawLineMulti('chartCmp' + (idx + 1), labels, perYear(k));
+            });
+            cmpEl('cmpChartBox2').classList.toggle('hidden', chartKeys.length < 2);
+            if (chartKeys.length < 2) cmpDestroy('chartCmp2');
+        }
+        if (dataset === 'both') {
+            cmpEl('cmpChartTitle3').textContent = 'Combined visitors (AEs + TAss) — month by month';
+            cmpDrawLineMulti('chartCmp3', labels, perYear('combined'));
+            cmpEl('cmpChartBox3').classList.remove('hidden');
+        } else {
+            cmpEl('cmpChartBox3').classList.add('hidden');
+            cmpDestroy('chartCmp3');
+        }
+    } else {
+        // ---- Yearly table (totals + breakdown) ----
+        const rows = [];
+        const comp = (label, fn) => { const v = {}; years.forEach(y => { v[y] = sum(agg[y], fn); }); rows.push({ label, v, total: false }); };
+        const tot = (label, k) => rows.push({ label, v: totals[k], total: true });
+        if (dataset !== 'tass') {
+            comp('Local Tourist', x => x.local); comp('Foreign Tourist', x => x.foreign); comp('Overseas Filipino', x => x.overseas);
+            tot('TOTAL TOURIST ARRIVALS (AEs)', 'ae');
+        }
+        if (dataset !== 'ae') {
+            comp('Same-Day (TM)', x => x.tm); comp('Same-Day (OM)', x => x.om); comp('Same-Day (FCR)', x => x.fcr);
+            tot('TOTAL SAME-DAY VISITORS (TAss)', 'tass');
+        }
+        if (dataset === 'both') tot('COMBINED VISITORS', 'combined');
+
+        let head = '<tr class="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-300"><th class="p-2 border">Category</th>';
+        exportHead.push('Category');
+        let col = 1;
+        years.forEach(y => { head += `<th class="p-2 border text-right" style="color:${cmpColor(years, y)}">${y}</th>`; exportHead.push(String(y)); numericCols.push(col++); });
+        pairs.forEach(([p, c]) => {
+            head += `<th class="p-2 border text-right">Change ${c} vs ${p}</th><th class="p-2 border text-right">% ${c} vs ${p}</th>`;
+            exportHead.push(`Change ${c} vs ${p}`, `% ${c} vs ${p}`);
+            numericCols.push(col); col += 2;
+        });
+        cmpEl('cmpHead').innerHTML = head + '</tr>';
+
+        cmpEl('cmpTableBody').innerHTML = rows.map(r => {
+            let tr = `<tr class="border-b ${r.total ? 'bg-slate-100 font-bold' : 'hover:bg-slate-50'}"><td class="p-2 ${r.total ? 'text-slate-900' : 'text-slate-700'}">${r.label}</td>`;
+            const ex = [r.label];
+            years.forEach(y => { tr += `<td class="p-2 text-right">${r.v[y].toLocaleString()}</td>`; ex.push(r.v[y]); });
+            pairs.forEach(([p, c]) => { tr += cmpChangeCells(r.v[p], r.v[c], true); ex.push(...cmpChangeExport(r.v[p], r.v[c], true)); });
+            exportRows.push(ex);
+            return tr + '</tr>';
+        }).join('');
+        cmpEl('cmpFoot').innerHTML = '';
+
+        // ---- Yearly charts ----
+        const chartRows = dataset === 'both' ? rows.filter(r => r.total) : rows;
+        cmpEl('cmpChartTitle1').textContent = `${yearsTxt} — ${dsLabel}`;
+        cmpDrawBar('chartCmp1', chartRows.map(r => r.label.replace('TOTAL ', 'Total ').replace('COMBINED VISITORS', 'Combined')),
+            years.map(y => ({ label: String(y), data: chartRows.map(r => r.v[y]), color: cmpColor(years, y) })));
+        cmpEl('cmpChartBox2').classList.add('hidden');
+        cmpDestroy('chartCmp2');
+        if (dataset === 'both') {
+            cmpEl('cmpChartTitle3').textContent = 'Combined visitors (AEs + TAss) — each year, split by type';
+            cmpDrawStacked('chartCmp3', years.map(String), years.map(y => totals.ae[y]), years.map(y => totals.tass[y]));
+            cmpEl('cmpChartBox3').classList.remove('hidden');
+        } else {
+            cmpEl('cmpChartBox3').classList.add('hidden');
+            cmpDestroy('chartCmp3');
+        }
+    }
+
+    cmpExportData = {
+        title: `${mode === 'monthly' ? 'MONTHLY' : 'YEARLY'} TOURISM TREND COMPARISON`,
+        sub: `${yearsTxt} | ${dsLabel} | ${scope} | ${range.label}${same ? ' | Same months only' : ''}`,
+        head: exportHead, rows: exportRows, numericCols,
+        file: `Tourism_Comparison_${mode}_${years.join('_')}.xlsx`
+    };
+    cmpRenderBreakdown();
+    cmpRenderStackMonthly();
+}
+
+/** 5th graph: AEs + TAss stacked, month by month, for ONE chosen year (within the month range). */
+function cmpRenderStackMonthly() {
+    const box = cmpEl('cmpChartBox4');
+    if (!box) return;
+    const raw = cmpEl('cmpDataset').value;
+    const yearSel = cmpEl('cmpStackYear');
+    if (!(raw === 'both' || raw === 'both1') || !yearSel.value) {
+        box.classList.add('hidden'); cmpDestroy('chartCmp4'); return;
+    }
+    const year = Number(yearSel.value), muni = cmpEl('cmpMuni').value || 'ALL';
+    const range = cmpMonthRange();
+    const M = cmpAggregate(year, muni);
+    cmpEl('cmpChartTitle4').textContent = `Combined visitors (AEs + TAss) per month — stacked, ${year}${range.full ? '' : ' (' + range.label + ')'}`;
+    box.classList.remove('hidden');
+    cmpDrawStacked('chartCmp4', range.idxs.map(i => MONTH_NAMES[i].substring(0, 3)),
+        range.idxs.map(i => M[i].local + M[i].foreign + M[i].overseas),
+        range.idxs.map(i => M[i].tm + M[i].om + M[i].fcr));
 }
 
 function exportComparisonExcel() {
@@ -3381,18 +3384,16 @@ function exportComparisonExcel() {
     saveWorkbook(wb, d.file);
 }
 
-
 /**
  * BREAKDOWN: who is rising / declining? Per municipality, or per establishment (AEs) / attraction (TAss).
- * Uses the same Data, Year A, Year B and "same months only" choices as the main comparison.
+ * Shows every selected year; the change is the LATEST selected year vs the year before it.
  */
-let cmpBreakExport = null;
-
 function cmpClearBreakdown() {
     if (!cmpEl('cmpBreakBody')) return;
     cmpEl('cmpBreakSummary').innerHTML = '';
     cmpEl('cmpBreakHead').innerHTML = '';
     cmpEl('cmpBreakBody').innerHTML = '';
+    cmpEl('cmpBreakChartBox').classList.add('hidden');
     cmpDestroy('chartCmpBreak');
     cmpBreakExport = null;
 }
@@ -3400,23 +3401,25 @@ function cmpClearBreakdown() {
 function cmpRenderBreakdown() {
     if (!cmpEl('cmpBreakBody')) return;
     const dataset = cmpEl('cmpDataset').value === 'both1' ? 'both' : cmpEl('cmpDataset').value;
-    const yA = Number(cmpEl('cmpYearA').value), yB = Number(cmpEl('cmpYearB').value);
     const muniFilter = cmpEl('cmpMuni').value || 'ALL';
     const same = cmpEl('cmpSameMonths').checked;
     const by = cmpEl('cmpBreakBy').value;        // muni | entity
     const sortBy = cmpEl('cmpBreakSort').value;  // decline | increase | volume | name
-    if (!yA || !yB) { cmpClearBreakdown(); return; }
+    const years = cmpSelectedYears();
+    const range = cmpMonthRange();
+    if (years.length < 2) { cmpClearBreakdown(); return; }
+    const prevY = years[years.length - 2], lastY = years[years.length - 1];
 
-    // Months that have data in both years (whole province, so every row is judged on the same months)
-    const A0 = cmpAggregate(yA, 'ALL'), B0 = cmpAggregate(yB, 'ALL');
+    // Months counted: inside the range, and (optionally) with data in every selected year (whole province)
+    const agg0 = {}; years.forEach(y => { agg0[y] = cmpAggregate(y, 'ALL'); });
     const base = dataset === 'both' ? ['ae', 'tass'] : [dataset];
-    const mask = A0.map((_, i) => !same || base.every(k => cmpHas(A0[i], k) && cmpHas(B0[i], k)));
+    const mask = Array.from({ length: 12 }, (_, i) => range.idxs.includes(i) && (!same || years.every(y => base.every(k => cmpHas(agg0[y][i], k)))));
 
     const items = new Map();
     const add = (list, kind) => {
         list.forEach(r => {
             const y = Number(r.year);
-            if (y !== yA && y !== yB) return;
+            if (!years.includes(y)) return;
             if (!(r.month >= 1 && r.month <= 12) || !mask[r.month - 1]) return;
             if (by === 'entity' && muniFilter !== 'ALL' && r.municipality !== muniFilter) return;
             const v = kind === 'ae'
@@ -3425,15 +3428,17 @@ function cmpRenderBreakdown() {
             const muni = r.municipality || 'Unspecified';
             const name = by === 'muni' ? muni : ((kind === 'ae' ? r.establishment : r.attraction) || 'Unspecified');
             const key = by === 'muni' ? name : `${kind}||${muni}||${name}`;
-            if (!items.has(key)) items.set(key, { name, muni, kind, a: 0, b: 0 });
-            const it = items.get(key);
-            if (y === yA) it.a += v; else it.b += v;
+            if (!items.has(key)) { const v0 = {}; years.forEach(yy => { v0[yy] = 0; }); items.set(key, { name, muni, kind, v: v0 }); }
+            items.get(key).v[y] += v;
         });
     };
     if (dataset !== 'tass') add(aeRecords, 'ae');
     if (dataset !== 'ae') add(tassRecords, 'tass');
 
-    const list = Array.from(items.values()).map(x => ({ ...x, diff: x.b - x.a, pct: x.a > 0 ? ((x.b - x.a) / x.a) * 100 : null }));
+    const list = Array.from(items.values()).map(x => {
+        const a = x.v[prevY], b = x.v[lastY];
+        return { ...x, a, b, diff: b - a, pct: a > 0 ? ((b - a) / a) * 100 : null };
+    });
     const sorters = {
         decline: (p, q) => p.diff - q.diff,
         increase: (p, q) => q.diff - p.diff,
@@ -3445,7 +3450,7 @@ function cmpRenderBreakdown() {
     const up = list.filter(x => x.diff > 0).length, down = list.filter(x => x.diff < 0).length, flat = list.length - up - down;
     const what = by === 'muni' ? 'municipalities' : 'establishments / attractions';
     cmpEl('cmpBreakSummary').innerHTML = list.length
-        ? `<strong>${list.length.toLocaleString()}</strong> ${what} compared (${yA} → ${yB}${same ? ', same months only' : ''}): ` +
+        ? `<strong>${list.length.toLocaleString()}</strong> ${what} compared (${lastY} vs ${prevY}, ${range.label}${same ? ', same months only' : ''}): ` +
           `<span class="font-bold text-emerald-700">${up} increasing</span>, <span class="font-bold text-rose-600">${down} declining</span>, ${flat} unchanged.`
         : `No ${what} found for this selection.`;
 
@@ -3455,24 +3460,22 @@ function cmpRenderBreakdown() {
     cmpEl('cmpBreakHead').innerHTML = `<tr class="bg-slate-100 text-slate-700 font-bold uppercase border-b border-slate-300">
         <th class="p-2 border text-center">#</th><th class="p-2 border">${thLabel}</th>
         ${showEntityCols ? '<th class="p-2 border">Municipality</th>' + (dataset === 'both' ? '<th class="p-2 border">Type</th>' : '') : ''}
-        <th class="p-2 border text-right">${yA}</th><th class="p-2 border text-right">${yB}</th>
-        <th class="p-2 border text-right">Change</th><th class="p-2 border text-right">% Change</th><th class="p-2 border text-center">Trend</th></tr>`;
+        ${years.map(y => `<th class="p-2 border text-right" style="color:${cmpColor(years, y)}">${y}</th>`).join('')}
+        <th class="p-2 border text-right">Change ${lastY} vs ${prevY}</th><th class="p-2 border text-right">% Change</th><th class="p-2 border text-center">Trend</th></tr>`;
 
     cmpEl('cmpBreakBody').innerHTML = list.map((x, i) => {
         const tr = cmpTrend(x.a, x.b);
-        const typeTxt = x.kind === 'ae' ? 'AE' : 'TAss';
         return `<tr class="hover:bg-slate-50 border-b">
             <td class="p-2 text-center text-slate-400">${i + 1}</td>
             <td class="p-2 font-bold text-slate-800">${cmpEsc(x.name)}</td>
-            ${showEntityCols ? `<td class="p-2 text-slate-600">${cmpEsc(x.muni)}</td>` + (dataset === 'both' ? `<td class="p-2 text-slate-600">${typeTxt}</td>` : '') : ''}
-            <td class="p-2 text-right bg-amber-50/40">${x.a.toLocaleString()}</td>
-            <td class="p-2 text-right bg-teal-50/40">${x.b.toLocaleString()}</td>
+            ${showEntityCols ? `<td class="p-2 text-slate-600">${cmpEsc(x.muni)}</td>` + (dataset === 'both' ? `<td class="p-2 text-slate-600">${x.kind === 'ae' ? 'AE' : 'TAss'}</td>` : '') : ''}
+            ${years.map(y => `<td class="p-2 text-right">${x.v[y].toLocaleString()}</td>`).join('')}
             ${cmpChangeCells(x.a, x.b, true)}
             <td class="p-2 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${tr.badge}">${tr.label}</span></td>
         </tr>`;
-    }).join('') || `<tr><td colspan="9" class="p-6 text-center text-slate-400">No data for this selection.</td></tr>`;
+    }).join('') || `<tr><td colspan="12" class="p-6 text-center text-slate-400">No data for this selection.</td></tr>`;
 
-    // ---- Chart: biggest movers (up to 10 increases + 10 declines), as change in visitors ----
+    // ---- Chart: biggest movers (up to 10 increases + 10 declines) ----
     const movers = list.filter(x => x.diff !== 0);
     const top = movers.slice().sort((p, q) => q.diff - p.diff).slice(0, 10);
     const bottom = movers.slice().sort((p, q) => p.diff - q.diff).slice(0, 10);
@@ -3486,7 +3489,7 @@ function cmpRenderBreakdown() {
             type: 'bar',
             data: {
                 labels: chartItems.map(x => (by === 'entity' && dataset === 'both' ? `[${x.kind === 'ae' ? 'AE' : 'TAss'}] ` : '') + x.name),
-                datasets: [{ label: `Change (${yA} → ${yB})`, data: chartItems.map(x => x.diff), backgroundColor: chartItems.map(x => x.diff >= 0 ? '#059669' : '#e11d48'), borderRadius: 4 }]
+                datasets: [{ label: `Change (${prevY} → ${lastY})`, data: chartItems.map(x => x.diff), backgroundColor: chartItems.map(x => x.diff >= 0 ? '#059669' : '#e11d48'), borderRadius: 4 }]
             },
             options: {
                 indexAxis: 'y', responsive: true, maintainAspectRatio: false,
@@ -3503,19 +3506,21 @@ function cmpRenderBreakdown() {
     // ---- Export data ----
     const head = ['#', thLabel];
     if (showEntityCols) { head.push('Municipality'); if (dataset === 'both') head.push('Type'); }
-    head.push(String(yA), String(yB), 'Change', '% Change');
+    const firstNum = head.length;
+    years.forEach(y => head.push(String(y)));
+    head.push(`Change ${lastY} vs ${prevY}`, '% Change');
     const rows = list.map((x, i) => {
         const r = [i + 1, x.name];
         if (showEntityCols) { r.push(x.muni); if (dataset === 'both') r.push(x.kind === 'ae' ? 'AE' : 'TAss'); }
-        r.push(x.a, x.b, x.diff, x.pct === null ? '' : Number(x.pct.toFixed(1)));
+        years.forEach(y => r.push(x.v[y]));
+        r.push(x.diff, x.pct === null ? '' : Number(x.pct.toFixed(1)));
         return r;
     });
-    const firstNum = head.length - 4;
     cmpBreakExport = {
         title: by === 'muni' ? 'TOURISM TREND BY MUNICIPALITY' : 'TOURISM TREND BY ESTABLISHMENT / ATTRACTION',
-        sub: `${yA} vs ${yB} | ${dataset === 'both' ? 'AEs + TAss' : CMP_LABELS[dataset]}${by === 'entity' && muniFilter !== 'ALL' ? ' | ' + muniFilter : ''}${same ? ' | Same months only' : ''}`,
-        head, rows, numericCols: [firstNum, firstNum + 1, firstNum + 2],
-        file: `Tourism_Trend_${by === 'muni' ? 'Municipality' : 'Entity'}_${yA}_vs_${yB}.xlsx`
+        sub: `${years.join(', ')} | ${dataset === 'both' ? 'AEs + TAss' : CMP_LABELS[dataset]} | ${range.label}${by === 'entity' && muniFilter !== 'ALL' ? ' | ' + muniFilter : ''}${same ? ' | Same months only' : ''}`,
+        head, rows, numericCols: years.map((_, n) => firstNum + n).concat([firstNum + years.length]),
+        file: `Tourism_Trend_${by === 'muni' ? 'Municipality' : 'Entity'}_${years.join('_')}.xlsx`
     };
 }
 
