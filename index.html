@@ -305,37 +305,13 @@
                     </div>
                 </div>
 
-                <!-- Visualization Charts Grid -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                        <h3 class="font-semibold text-slate-800 mb-4 text-sm md:text-base flex items-center justify-between">
-                            <span>Monthly Visitors Trend</span>
-                            <span class="text-xs font-normal text-slate-500">AEs vs TAss</span>
-                        </h3>
-                        <div class="h-64"><canvas id="chartMonthlyTrend"></canvas></div>
-                    </div>
-                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                        <h3 class="font-semibold text-slate-800 mb-4 text-sm md:text-base">Top Municipalities by Combined Visitors</h3>
-                        <div class="h-64"><canvas id="chartMunicipality"></canvas></div>
-                    </div>
-                </div>
-
-                <!-- All-Years Comparison Charts (independent of the filters above) -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                        <h3 class="font-semibold text-slate-800 mb-4 text-sm md:text-base flex items-center justify-between">
-                            <span>Combined Visitors by Year</span>
-                            <span class="text-xs font-normal text-slate-500">All Years, AEs + TAss</span>
-                        </h3>
-                        <div class="h-64"><canvas id="chartYearlyTotals"></canvas></div>
-                    </div>
-                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                        <h3 class="font-semibold text-slate-800 mb-4 text-sm md:text-base flex items-center justify-between">
-                            <span>Monthly Trend Across Years</span>
-                            <span class="text-xs font-normal text-slate-500">Jan-Dec, one line per year</span>
-                        </h3>
-                        <div class="h-64"><canvas id="chartYearlySeasonality"></canvas></div>
-                    </div>
+                <!-- Combined Visitors by Year (independent of the filters above) -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <h3 class="font-semibold text-slate-800 mb-4 text-sm md:text-base flex items-center justify-between">
+                        <span>Combined Visitors by Year</span>
+                        <span class="text-xs font-normal text-slate-500">All Years, AEs + TAss</span>
+                    </h3>
+                    <div class="h-64"><canvas id="chartYearlyTotals"></canvas></div>
                 </div>
             </section>
 
