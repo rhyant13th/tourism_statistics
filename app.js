@@ -1075,6 +1075,7 @@ function refreshDashboard() {
     document.getElementById('barFemale').style.width = `${femalePct}%`;
 
     renderAllYearsDashboardCharts();
+    try { renderDashboardHighlights(yr, mu, filteredAE, filteredTAss); } catch (e) { console.error('Dashboard highlights error:', e); }
 }
 
 function resetDashFilters() {
@@ -1113,6 +1114,408 @@ function renderAllYearsDashboardCharts() {
         },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
     });
+}
+
+// ##############################################################################
+// ##### SECTION: TREND ANALYSIS
+// ##############################################################################
+
+/**
+ * TREND ANALYSIS: Jan-Dec series, increase/decrease details and trend charts.
+ * Shared by the Dashboard ("Key Highlights") and the Monthly Summary (graph + details).
+ */
+let chartMonthlyTrendObj = null;
+let chartDashTrendObj = null;
+
+const MONTH_SHORT = MONTH_NAMES.map(n => n.slice(0, 3));
+const tNum = n => Number(n || 0).toLocaleString();
+const tSigned = n => (n > 0 ? '+' : n < 0 ? '-' : '') + Math.abs(Math.round(n)).toLocaleString();
+const tPct = p => (p === null || p === undefined || !isFinite(p)) ? '—' : (p > 0 ? '+' : p < 0 ? '-' : '') + Math.abs(p).toFixed(1) + '%';
+const tPctChange = (cur, prev) => prev > 0 ? ((cur - prev) / prev) * 100 : null;
+const tEsc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Colors / icons / wording for each kind of change
+const T_TONE = {
+    up:   { text: 'text-emerald-700', bg: 'bg-emerald-100', icon: 'fa-arrow-trend-up',   word: 'increasing', arrow: 'fa-arrow-up',   label: 'Increase' },
+    down: { text: 'text-rose-700',    bg: 'bg-rose-100',    icon: 'fa-arrow-trend-down', word: 'decreasing', arrow: 'fa-arrow-down', label: 'Decrease' },
+    flat: { text: 'text-slate-600',   bg: 'bg-slate-100',   icon: 'fa-minus',            word: 'stable',     arrow: 'fa-minus',      label: 'No change' },
+    info: { text: 'text-sky-700',     bg: 'bg-sky-100',     icon: 'fa-circle-info',      word: '',           arrow: 'fa-minus',      label: '' }
+};
+
+/**
+ * Builds the January-December series for one year (+ optional municipality).
+ * A month is "reported" (hasData) only when at least one record exists for it.
+ * Each reported month also gets `mom` = change versus the month right before it.
+ */
+function getMonthlySeries(yr, mu) {
+    const inScope = r => r.year == yr && (mu === 'ALL' || r.municipality === mu);
+    const series = [];
+    for (let m = 1; m <= 12; m++) {
+        const ae = aeRecords.filter(r => inScope(r) && r.month == m);
+        const ta = tassRecords.filter(r => inScope(r) && r.month == m);
+        let aeTotal = 0, tassTotal = 0;
+        ae.forEach(r => { aeTotal += Number(r.local_tourist || 0) + Number(r.foreign_tourist || 0) + Number(r.overseas_filipino || 0); });
+        ta.forEach(r => { tassTotal += Number(r.tm_sum || 0) + Number(r.om_sum || 0) + Number(r.fcr_sum || 0); });
+        series.push({
+            m, name: MONTH_NAMES[m - 1], short: MONTH_SHORT[m - 1],
+            hasData: (ae.length + ta.length) > 0,
+            ae: aeTotal, tass: tassTotal, combined: aeTotal + tassTotal, mom: null
+        });
+    }
+    for (let i = 1; i < 12; i++) {
+        const cur = series[i], prev = series[i - 1];
+        if (cur.hasData && prev.hasData) {
+            const delta = cur.combined - prev.combined;
+            cur.mom = {
+                delta, pct: tPctChange(cur.combined, prev.combined),
+                dir: delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat',
+                aePct: tPctChange(cur.ae, prev.ae), tassPct: tPctChange(cur.tass, prev.tass),
+                prevName: prev.name
+            };
+        }
+    }
+    return series;
+}
+
+/** Overall direction using a best-fit (least squares) line across the reported months. */
+function getTrendDirection(series) {
+    const rep = series.filter(s => s.hasData);
+    if (rep.length < 2) return null;
+    const n = rep.length;
+    const mx = rep.reduce((a, s) => a + s.m, 0) / n;
+    const my = rep.reduce((a, s) => a + s.combined, 0) / n;
+    let num = 0, den = 0;
+    rep.forEach(s => { num += (s.m - mx) * (s.combined - my); den += (s.m - mx) ** 2; });
+    const slope = den ? num / den : 0;
+    const rel = my > 0 ? slope / my : 0;   // average change per month, relative to the monthly average
+    return { dir: rel > 0.02 ? 'up' : rel < -0.02 ? 'down' : 'flat', slope, rel };
+}
+
+/** Plain-language details on what increased / decreased. Returns [{tone, text(html)}]. */
+function trendInsights(series, yr) {
+    const rep = series.filter(s => s.hasData);
+    if (!rep.length) return [{ tone: 'flat', text: `No records encoded for ${yr} yet.` }];
+    const first = rep[0], last = rep[rep.length - 1];
+    if (rep.length === 1) {
+        return [{ tone: 'flat', text: `Only <b>${first.name}</b> has records so far (${tNum(first.combined)} combined visitors), so a trend can't be shown yet.` }];
+    }
+    const out = [];
+    const toneOf = d => d > 0 ? 'up' : d < 0 ? 'down' : 'flat';
+
+    const dAll = last.combined - first.combined;
+    const pAll = tPctChange(last.combined, first.combined);
+    out.push({
+        tone: toneOf(dAll),
+        text: `<b>Overall:</b> combined visitors ${dAll > 0 ? 'increased' : dAll < 0 ? 'decreased' : 'did not change'}` +
+              `${dAll ? ` by ${tNum(Math.abs(dAll))}${pAll !== null ? ` (${Math.abs(pAll).toFixed(1)}%)` : ''}` : ''}` +
+              ` from ${first.name} (${tNum(first.combined)}) to ${last.name} (${tNum(last.combined)}).`
+    });
+
+    const dir = getTrendDirection(series);
+    if (dir) out.push({ tone: dir.dir, text: `<b>Direction:</b> the best-fit line across ${rep.length} reported months is <b>${T_TONE[dir.dir].word}</b>.` });
+
+    const peak = rep.reduce((a, s) => s.combined > a.combined ? s : a);
+    const low = rep.reduce((a, s) => s.combined < a.combined ? s : a);
+    out.push({ tone: 'info', text: `<b>Peak:</b> ${peak.name} (${tNum(peak.combined)}). <b>Lowest:</b> ${low.name} (${tNum(low.combined)}).` });
+
+    const moms = rep.filter(s => s.mom);
+    if (moms.length) {
+        const ups = moms.filter(s => s.mom.dir === 'up').length;
+        const downs = moms.filter(s => s.mom.dir === 'down').length;
+        const same = moms.length - ups - downs;
+        out.push({ tone: 'info', text: `<b>Month-to-month:</b> rose in ${ups} of ${moms.length} comparisons and fell in ${downs}${same ? `, unchanged in ${same}` : ''}.` });
+        const bigUp = moms.reduce((a, s) => s.mom.delta > a.mom.delta ? s : a);
+        const bigDown = moms.reduce((a, s) => s.mom.delta < a.mom.delta ? s : a);
+        if (bigUp.mom.delta > 0) out.push({ tone: 'up', text: `<b>Biggest rise:</b> ${bigUp.mom.prevName} → ${bigUp.name}, ${tSigned(bigUp.mom.delta)} (${tPct(bigUp.mom.pct)}).` });
+        if (bigDown.mom.delta < 0) out.push({ tone: 'down', text: `<b>Biggest drop:</b> ${bigDown.mom.prevName} → ${bigDown.name}, ${tSigned(bigDown.mom.delta)} (${tPct(bigDown.mom.pct)}).` });
+    }
+    if (last.mom) {
+        out.push({
+            tone: last.mom.dir,
+            text: `<b>Latest (${last.name}):</b> ${last.mom.dir === 'up' ? 'higher' : last.mom.dir === 'down' ? 'lower' : 'unchanged'} than ${last.mom.prevName}` +
+                  `${last.mom.delta ? ` by ${tNum(Math.abs(last.mom.delta))} (${tPct(last.mom.pct)})` : ''}.`
+        });
+    }
+
+    const seg = (label, p, a, b) => p === null ? null : `${label} ${p > 0 ? 'rose' : p < 0 ? 'fell' : 'held steady'} ${Math.abs(p).toFixed(1)}% (${tNum(a)} → ${tNum(b)})`;
+    const segs = [
+        seg('Tourist Arrivals (AEs)', tPctChange(last.ae, first.ae), first.ae, last.ae),
+        seg('Same-Day Visitors (TAss)', tPctChange(last.tass, first.tass), first.tass, last.tass)
+    ].filter(Boolean);
+    if (segs.length) out.push({ tone: 'info', text: `<b>By segment (${first.short} → ${last.short}):</b> ${segs.join('; ')}.` });
+
+    const gaps = series.filter(s => !s.hasData && s.m > first.m && s.m < last.m).map(s => s.short);
+    if (gaps.length) out.push({ tone: 'flat', text: `<b>Note:</b> no records for ${gaps.join(', ')}; changes next to ${gaps.length > 1 ? 'those months' : 'that month'} can't be computed.` });
+
+    return out;
+}
+
+function renderTrendInsights(elId, items) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    el.innerHTML = items.map(i => {
+        const t = T_TONE[i.tone] || T_TONE.flat;
+        return `<li class="flex items-start gap-2"><i class="fa-solid ${t.icon} ${t.text} mt-0.5 w-4 text-center"></i><span>${i.text}</span></li>`;
+    }).join('');
+}
+
+function setTrendBadge(elId, dirInfo) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (!dirInfo) {
+        el.className = 'text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-500';
+        el.innerHTML = 'Trend: not enough data';
+        return;
+    }
+    const t = T_TONE[dirInfo.dir];
+    el.className = `text-xs font-semibold px-2.5 py-1 rounded-full ${t.bg} ${t.text}`;
+    el.innerHTML = `<i class="fa-solid ${t.icon} mr-1"></i> Overall trend: ${t.word.charAt(0).toUpperCase() + t.word.slice(1)}`;
+}
+
+// Point color on the "Combined" line: green = higher than previous month, red = lower
+function trendPointColor(series) {
+    return ctx => {
+        const s = series[ctx.dataIndex];
+        if (!s || !s.mom) return '#0f766e';
+        return s.mom.dir === 'up' ? '#059669' : s.mom.dir === 'down' ? '#e11d48' : '#64748b';
+    };
+}
+function trendTooltipFooter(series) {
+    return items => {
+        const s = items.length ? series[items[0].dataIndex] : null;
+        if (!s || !s.mom) return '';
+        return `Combined vs ${s.mom.prevName}: ${tSigned(s.mom.delta)} (${tPct(s.mom.pct)})`;
+    };
+}
+
+/** MONTHLY SUMMARY: line graph (Combined, AEs, TAss) + details table */
+function renderMonthlyTrend(yr, mu) {
+    const series = getMonthlySeries(yr, mu);
+    const el = document.getElementById('chartMonthlyTrend');
+    if (el) {
+        const dataOf = k => series.map(s => s.hasData ? s[k] : null);
+        const hasDL = (typeof ChartDataLabels !== 'undefined');
+        if (chartMonthlyTrendObj) chartMonthlyTrendObj.destroy();
+        chartMonthlyTrendObj = new Chart(el.getContext('2d'), {
+            type: 'line',
+            plugins: hasDL ? [ChartDataLabels] : [],
+            data: {
+                labels: series.map(s => s.short),
+                datasets: [
+                    {
+                        label: 'Combined Visitors', data: dataOf('combined'),
+                        borderColor: '#0f766e', backgroundColor: 'rgba(15,118,110,0.10)', fill: true,
+                        borderWidth: 3, tension: 0.25, spanGaps: false,
+                        pointRadius: 5, pointHoverRadius: 7, pointBorderColor: '#fff', pointBorderWidth: 2,
+                        pointBackgroundColor: trendPointColor(series),
+                        datalabels: hasDL ? {
+                            display: ctx => ctx.dataset.data[ctx.dataIndex] !== null,
+                            align: 'top', anchor: 'end', offset: 2, color: '#0f172a',
+                            font: { size: 9, weight: 'bold' }, formatter: v => Number(v).toLocaleString()
+                        } : undefined
+                    },
+                    {
+                        label: 'Tourist Arrivals (AEs)', data: dataOf('ae'),
+                        borderColor: '#2563eb', backgroundColor: '#2563eb', borderWidth: 2, tension: 0.25,
+                        pointRadius: 3, spanGaps: false, fill: false,
+                        datalabels: { display: false }
+                    },
+                    {
+                        label: 'Same-Day Visitors (TAss)', data: dataOf('tass'),
+                        borderColor: '#d97706', backgroundColor: '#d97706', borderWidth: 2, tension: 0.25,
+                        pointRadius: 3, spanGaps: false, fill: false,
+                        datalabels: { display: false }
+                    }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: false,
+                interaction: { mode: 'index', intersect: false },
+                layout: { padding: { top: 22, right: 12 } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { callback: v => Number(v).toLocaleString() } },
+                    x: { grid: { display: false } }
+                },
+                plugins: {
+                    legend: { position: 'bottom' },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString()}`,
+                            footer: trendTooltipFooter(series)
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    setTrendBadge('rptTrendBadge', getTrendDirection(series));
+    renderTrendInsights('rptTrendInsights', trendInsights(series, yr));
+
+    // Month-by-month details table
+    const tbody = document.getElementById('rptTrendBody');
+    if (tbody) {
+        const pctCell = p => {
+            if (p === null || p === undefined || !isFinite(p)) return '<span class="text-slate-300">—</span>';
+            const cls = p > 0 ? 'text-emerald-700' : p < 0 ? 'text-rose-700' : 'text-slate-500';
+            return `<span class="${cls} font-semibold">${tPct(p)}</span>`;
+        };
+        tbody.innerHTML = series.map(s => {
+            if (!s.hasData) {
+                return `<tr class="border-b text-slate-300"><td class="p-2 font-bold">${s.name}</td><td class="p-2 text-right">—</td><td class="p-2 text-right">—</td><td class="p-2 text-right">—</td><td class="p-2 text-center italic">No data</td><td class="p-2 text-right">—</td><td class="p-2 text-right">—</td></tr>`;
+            }
+            if (!s.mom) {
+                return `<tr class="border-b"><td class="p-2 font-bold text-slate-800">${s.name}</td><td class="p-2 text-right font-bold text-amber-900">${tNum(s.combined)}</td><td class="p-2 text-right text-slate-300">—</td><td class="p-2 text-right text-slate-300">—</td><td class="p-2 text-center text-slate-400 italic">No previous month</td><td class="p-2 text-right text-slate-300">—</td><td class="p-2 text-right text-slate-300">—</td></tr>`;
+            }
+            const t = T_TONE[s.mom.dir];
+            return `<tr class="border-b hover:bg-slate-50">
+                <td class="p-2 font-bold text-slate-800">${s.name}</td>
+                <td class="p-2 text-right font-bold text-amber-900">${tNum(s.combined)}</td>
+                <td class="p-2 text-right ${t.text} font-semibold">${tSigned(s.mom.delta)}</td>
+                <td class="p-2 text-right">${pctCell(s.mom.pct)}</td>
+                <td class="p-2 text-center"><span class="${t.text} font-bold"><i class="fa-solid ${t.arrow}"></i> ${t.label}</span></td>
+                <td class="p-2 text-right">${pctCell(s.mom.aePct)}</td>
+                <td class="p-2 text-right">${pctCell(s.mom.tassPct)}</td>
+            </tr>`;
+        }).join('');
+    }
+}
+
+/** DASHBOARD: key highlights, trend chart and top performers */
+function getDashTrendYear(yr) {
+    if (yr !== 'ALL') return Number(yr);
+    let max = 0;
+    aeRecords.forEach(r => { if (Number(r.year) > max) max = Number(r.year); });
+    tassRecords.forEach(r => { if (Number(r.year) > max) max = Number(r.year); });
+    return max || CURRENT_YEAR;
+}
+
+function renderRankList(elId, entries, emptyMsg) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (!entries.length) { el.innerHTML = `<li class="text-xs text-slate-400">${emptyMsg}</li>`; return; }
+    const max = entries[0][1] || 1;
+    el.innerHTML = entries.map(([name, val], i) => `<li>
+        <div class="flex justify-between text-xs"><span class="text-slate-700 truncate pr-2"><span class="text-slate-400 font-bold mr-1">${i + 1}.</span>${tEsc(name)}</span><span class="font-bold text-slate-800 whitespace-nowrap">${tNum(val)}</span></div>
+        <div class="w-full bg-slate-100 rounded-full h-1.5 mt-1"><div class="bg-teal-500 h-1.5 rounded-full" style="width:${Math.max(3, (val / max) * 100)}%"></div></div>
+    </li>`).join('');
+}
+
+function topEntries(map, n) {
+    return [...map.entries()].filter(e => e[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, n);
+}
+
+function renderDashboardHighlights(yr, mu, filteredAE, filteredTAss) {
+    const ty = getDashTrendYear(yr);
+    const series = getMonthlySeries(ty, mu);
+    const prevSeries = getMonthlySeries(ty - 1, mu);
+    const rep = series.filter(s => s.hasData);
+    const setHTML = (id, html, cls) => { const el = document.getElementById(id); if (el) { el.innerHTML = html; if (cls !== undefined) el.className = cls; } };
+
+    setHTML('dashHighlightScope', `${ty}${yr === 'ALL' ? ' (latest year with data)' : ''} · ${mu === 'ALL' ? 'All Municipalities' : tEsc(mu)} · trend ignores the Month filter`);
+
+    if (rep.length) {
+        const last = rep[rep.length - 1];
+        const peak = rep.reduce((a, s) => s.combined > a.combined ? s : a);
+        const low = rep.reduce((a, s) => s.combined < a.combined ? s : a);
+
+        // Latest month
+        setHTML('dashLatestValue', tNum(last.combined));
+        setHTML('dashLatestLabel', `${last.name} ${ty} · combined visitors`);
+        if (last.mom) {
+            const t = T_TONE[last.mom.dir];
+            setHTML('dashLatestChange', `<i class="fa-solid ${t.arrow}"></i> ${tSigned(last.mom.delta)} (${tPct(last.mom.pct)}) vs ${last.mom.prevName}`, `text-xs font-semibold mt-1 ${t.text}`);
+        } else {
+            setHTML('dashLatestChange', 'No previous month to compare', 'text-xs font-semibold mt-1 text-slate-400');
+        }
+
+        // Year-over-year (only months reported in BOTH years, so the comparison is fair)
+        const common = rep.filter(s => prevSeries[s.m - 1].hasData);
+        if (common.length) {
+            const cur = common.reduce((a, s) => a + s.combined, 0);
+            const prev = common.reduce((a, s) => a + prevSeries[s.m - 1].combined, 0);
+            const p = tPctChange(cur, prev);
+            const dir = cur > prev ? 'up' : cur < prev ? 'down' : 'flat';
+            const t = T_TONE[dir];
+            setHTML('dashYoYValue', `<i class="fa-solid ${t.arrow} text-lg"></i> ${tPct(p)}`, `text-2xl font-bold mt-1 ${t.text}`);
+            setHTML('dashYoYLabel', `${ty} vs ${ty - 1} · ${common.length} matching month${common.length > 1 ? 's' : ''}`);
+            setHTML('dashYoYSub', `${tNum(cur)} vs ${tNum(prev)} (${tSigned(cur - prev)})`, `text-xs font-semibold mt-1 ${t.text}`);
+        } else {
+            setHTML('dashYoYValue', '—', 'text-2xl font-bold mt-1 text-slate-400');
+            setHTML('dashYoYLabel', `No ${ty - 1} data to compare`);
+            setHTML('dashYoYSub', '', 'text-xs font-semibold mt-1');
+        }
+
+        setHTML('dashPeakValue', peak.name);
+        setHTML('dashPeakLabel', `${tNum(peak.combined)} combined visitors`);
+        setHTML('dashLowValue', low.name);
+        setHTML('dashLowLabel', `${tNum(low.combined)} combined visitors${rep.length < 12 ? ' (among reported months)' : ''}`);
+    } else {
+        ['dashLatestValue', 'dashPeakValue', 'dashLowValue'].forEach(id => setHTML(id, '—'));
+        setHTML('dashLatestLabel', `No records for ${ty}`);
+        setHTML('dashLatestChange', '', 'text-xs font-semibold mt-1');
+        setHTML('dashYoYValue', '—', 'text-2xl font-bold mt-1 text-slate-400');
+        setHTML('dashYoYLabel', `No records for ${ty}`);
+        setHTML('dashYoYSub', '', 'text-xs font-semibold mt-1');
+        setHTML('dashPeakLabel', '');
+        setHTML('dashLowLabel', '');
+    }
+
+    // Trend chart: this year (solid) vs previous year (dashed)
+    const el = document.getElementById('chartDashTrend');
+    if (el) {
+        if (chartDashTrendObj) chartDashTrendObj.destroy();
+        const datasets = [{
+            label: String(ty), data: series.map(s => s.hasData ? s.combined : null),
+            borderColor: '#0f766e', backgroundColor: 'rgba(15,118,110,0.12)', fill: true,
+            borderWidth: 3, tension: 0.25, spanGaps: false,
+            pointRadius: 5, pointHoverRadius: 7, pointBorderColor: '#fff', pointBorderWidth: 2,
+            pointBackgroundColor: trendPointColor(series)
+        }];
+        if (prevSeries.some(s => s.hasData)) {
+            datasets.push({
+                label: String(ty - 1), data: prevSeries.map(s => s.hasData ? s.combined : null),
+                borderColor: '#94a3b8', backgroundColor: '#94a3b8', borderDash: [6, 4], borderWidth: 2,
+                tension: 0.25, pointRadius: 2, spanGaps: false, fill: false
+            });
+        }
+        chartDashTrendObj = new Chart(el.getContext('2d'), {
+            type: 'line',
+            data: { labels: series.map(s => s.short), datasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: { y: { beginAtZero: true, ticks: { callback: v => Number(v).toLocaleString() } }, x: { grid: { display: false } } },
+                plugins: {
+                    datalabels: { display: false },
+                    legend: { position: 'bottom' },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString()}`,
+                            footer: trendTooltipFooter(series)
+                        }
+                    }
+                }
+            }
+        });
+    }
+    setTrendBadge('dashTrendBadge', getTrendDirection(series));
+    renderTrendInsights('dashTrendInsights', trendInsights(series, ty).slice(0, 5));
+
+    // Top performers (follow ALL dashboard filters, same as the KPI cards)
+    const muniMap = new Map(), aeMap = new Map(), taMap = new Map();
+    const add = (map, key, val) => { if (key) map.set(key, (map.get(key) || 0) + val); };
+    filteredAE.forEach(r => {
+        const v = Number(r.local_tourist || 0) + Number(r.foreign_tourist || 0) + Number(r.overseas_filipino || 0);
+        add(muniMap, r.municipality, v); add(aeMap, r.establishment, v);
+    });
+    filteredTAss.forEach(r => {
+        const v = Number(r.tm_sum || 0) + Number(r.om_sum || 0) + Number(r.fcr_sum || 0);
+        add(muniMap, r.municipality, v); add(taMap, r.attraction, v);
+    });
+    renderRankList('dashTopMuni', topEntries(muniMap, 3), 'No data for these filters');
+    renderRankList('dashTopAE', topEntries(aeMap, 3), 'No data for these filters');
+    renderRankList('dashTopTAss', topEntries(taMap, 3), 'No data for these filters');
 }
 
 // ##############################################################################
@@ -1987,6 +2390,8 @@ function renderMonthlyReport() {
                 <td class="p-2 text-right text-teal-200">${gTAssTotal.toLocaleString()}</td>
                 <td class="p-2 text-right text-amber-300 font-extrabold">${(gAEsTotal + gTAssTotal).toLocaleString()}</td>
             </tr>`;
+
+    try { renderMonthlyTrend(yr, mu); } catch (e) { console.error('Monthly trend error:', e); }
 }
 
 function getAnnualReportRows(yr, mo) {

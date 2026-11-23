@@ -27,3 +27,10 @@
         .print-report-header .prh-l4 { font-size: 10px; font-style: italic; }
     }
 
+
+/* ---- Monthly trend graph + increase/decrease details (print-friendly) ---- */
+.trend-block, .trend-details { break-inside: avoid; page-break-inside: avoid; }
+@media print {
+    .trend-block canvas { max-width: 100% !important; }
+    .trend-block, .trend-details { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
