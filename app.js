@@ -563,14 +563,18 @@ async function setRecordToCloud(type, record) {
     });
 }
 
-async function replacePeriodInCloud(type, records, periods) {
+async function replacePeriodInCloud(type, records, periods, onProgress) {
+    const report = (pct, text, detail) => { if (onProgress) onProgress(pct, text, detail); };
+    report(3, 'Connecting to the cloud...', '');
     await waitForCloud();
     const { collection, query, where, getDocs, doc, writeBatch } = window.cloudFns;
     const name = CLOUD_COLLECTIONS[type];
     const periodRecords = dedupePendingRecords(type, records);
 
     // Delete only the uploaded reporting period(s), not the whole database.
-    for (const period of periods) {
+    for (let pi = 0; pi < periods.length; pi++) {
+        const period = periods[pi];
+        report(5 + (pi / periods.length) * 35, 'Removing old records from the cloud...', `${MONTH_NAMES[period.month - 1]} ${period.year} (${pi + 1} of ${periods.length})`);
         const q = query(
             collection(window.cloudDB, name),
             where("year", "==", Number(period.year)),
@@ -586,6 +590,7 @@ async function replacePeriodInCloud(type, records, periods) {
     }
 
     // Add the replacement records in chunks.
+    report(40, 'Saving new records to the cloud...', `0 of ${periodRecords.length.toLocaleString()} records`);
     for (let i = 0; i < periodRecords.length; i += 450) {
         const batch = writeBatch(window.cloudDB);
         periodRecords.slice(i, i + 450).forEach(r => {
@@ -596,6 +601,8 @@ async function replacePeriodInCloud(type, records, periods) {
             });
         });
         await batch.commit();
+        const done = Math.min(i + 450, periodRecords.length);
+        report(40 + (done / periodRecords.length) * 55, 'Saving new records to the cloud...', `${done.toLocaleString()} of ${periodRecords.length.toLocaleString()} records`);
     }
 }
 
@@ -631,17 +638,19 @@ function replacePeriodsInStore(storeName,records,periods){
     });
 }
 
-async function replaceBulkByReportingPeriod(storeName,inMemoryRecords,pendingItems,label){
+async function replaceBulkByReportingPeriod(storeName,inMemoryRecords,pendingItems,label,onProgress){
     let newRecords=dedupePendingRecords(storeName,pendingItems.map(item=>item.record)); const periods=getReportingPeriods(newRecords);
     if(!periods.length)throw new Error('No valid reporting period found in the upload.');
     // Multiple Year + Month periods in one file are allowed: only the periods found in the file are replaced.
     const existingCount=countRecordsForPeriods(inMemoryRecords,periods), periodText=formatReportingPeriods(periods)+(periods.length>1?` (${periods.length} months)`:'');
     const message=existingCount>0?`Existing ${label} data was found for ${periodText}.\n\nThis will REPLACE ALL existing ${label} records for ${periodText}.\n\nOld records: ${existingCount.toLocaleString()}\nNew records: ${newRecords.length.toLocaleString()}\n\nOther months and years will remain unchanged.\n\nContinue?`:`This will save ${newRecords.length.toLocaleString()} ${label} records for ${periodText}.\n\nOther months and years will remain unchanged.\n\nContinue?`;
     if(!confirm(message))return false;
+    if(onProgress)onProgress(1,'Preparing...','');
     // Cloud is the shared master copy. Only after the cloud replacement
     // succeeds do we update this browser's IndexedDB cache.
-    await replacePeriodInCloud(storeName, newRecords, periods);
-    const savedRecords=await replacePeriodsInStore(storeName,newRecords,periods); const periodKeys=new Set(periods.map(p=>`${p.year}-${p.month}`)); const retained=inMemoryRecords.filter(r=>!periodKeys.has(`${Number(r.year)}-${Number(r.month)}`)); inMemoryRecords.splice(0,inMemoryRecords.length,...retained,...savedRecords); updateCloudStatus("Cloud Saved", true); return true;
+    await replacePeriodInCloud(storeName, newRecords, periods, onProgress);
+    if(onProgress)onProgress(96,'Updating this device...','');
+    const savedRecords=await replacePeriodsInStore(storeName,newRecords,periods); const periodKeys=new Set(periods.map(p=>`${p.year}-${p.month}`)); const retained=inMemoryRecords.filter(r=>!periodKeys.has(`${Number(r.year)}-${Number(r.month)}`)); inMemoryRecords.splice(0,inMemoryRecords.length,...retained,...savedRecords); updateCloudStatus("Cloud Saved", true); return newRecords.length;
 }
 
 // ##############################################################################
@@ -818,6 +827,148 @@ function renderUploadQuality(prefix, issues, scopeText) {
     el.innerHTML = html;
 }
 
+// ---- Step-by-step flow, progress bar and "Upload complete" panel -------------------
+// Flow: Choose file -> 1. Process Excel -> 2. Save / Replace Data -> Upload complete
+// Every save goes to the cloud first, then to this device (nothing extra to click).
+const bulkSaving = { AE: false, TAss: false };
+const BULK_STEP_LABELS = ['Choose file', '1. Process Excel', '2. Save / Replace Data', 'Upload complete'];
+
+window.addEventListener('beforeunload', e => {
+    if (bulkSaving.AE || bulkSaving.TAss) { e.preventDefault(); e.returnValue = ''; }
+});
+
+function bulkHasFile(prefix) {
+    const f = document.getElementById(`bulk${prefix}File`);
+    return !!(f && f.files && f.files.length);
+}
+
+/** step: 'file' | 'process' | 'save' | 'saving' | 'done' */
+function setBulkStep(prefix, step) {
+    const $ = id => document.getElementById(id);
+    const activeIdx = { file: 0, process: 1, save: 2, saving: 2, done: 4 }[step];
+
+    const stepper = $(`bulk${prefix}Stepper`);
+    if (stepper) {
+        stepper.innerHTML = BULK_STEP_LABELS.map((label, i) => {
+            const state = i < activeIdx ? 'done' : i === activeIdx ? 'active' : 'pending';
+            const cls = state === 'done' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : state === 'active' ? 'bg-teal-600 text-white border-teal-600'
+                : 'bg-white text-slate-400 border-slate-200';
+            const icon = state === 'done' ? 'fa-circle-check' : state === 'active' ? (step === 'saving' ? 'fa-spinner fa-spin' : 'fa-circle-dot') : 'fa-circle';
+            return `<li class="flex items-center gap-2"><span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border font-semibold ${cls}"><i class="fa-solid ${icon}"></i> ${label}</span>` +
+                (i < BULK_STEP_LABELS.length - 1 ? '<i class="fa-solid fa-chevron-right text-slate-300 text-[9px]"></i>' : '') + '</li>';
+        }).join('');
+    }
+
+    const proc = $(`btnProcessBulk${prefix}`), save = $(`btnSaveBulk${prefix}`), close = $(`btnCloseBulk${prefix}`);
+    if (proc) { proc.disabled = step !== 'process'; proc.innerHTML = '1. Process Excel'; }   // grayed out once processed
+    if (save) {
+        save.disabled = step !== 'save';
+        save.innerHTML = step === 'saving' ? '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Saving&hellip;' : '2. Save / Replace Data';
+        save.classList.toggle('ring-4', step === 'save');
+        save.classList.toggle('ring-emerald-200', step === 'save');
+    }
+    if (close) close.disabled = step === 'saving';
+
+    const progress = $(`bulk${prefix}Progress`), complete = $(`bulk${prefix}Complete`);
+    if (progress) progress.classList.toggle('hidden', step !== 'saving');
+    if (complete) complete.classList.toggle('hidden', step !== 'done');
+    if (step === 'done') {
+        ['Summary', 'PreviewContainer', 'ErrorLog', 'QualityLog'].forEach(s => {
+            const el = $(`bulk${prefix}${s}`);
+            if (el) el.classList.add('hidden');
+        });
+    }
+
+    // Lock the upload settings while saving so nothing can change mid-save
+    const lock = step === 'saving';
+    [`bulk${prefix}File`, `bulk${prefix}Year`, `bulk${prefix}Month`].forEach(id => { const el = $(id); if (el) el.disabled = lock; });
+    document.querySelectorAll(`input[name="bulk${prefix}Mode"]`).forEach(r => { r.disabled = lock; });
+}
+
+/** Shown while the file is being read and checked. */
+function setBulkProcessing(prefix) {
+    const proc = document.getElementById(`btnProcessBulk${prefix}`), save = document.getElementById(`btnSaveBulk${prefix}`);
+    if (proc) { proc.disabled = true; proc.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Processing&hellip;'; }
+    if (save) save.disabled = true;
+}
+
+function updateBulkProgress(prefix, pct, text, detail) {
+    const p = Math.max(0, Math.min(100, Math.round(pct)));
+    const bar = document.getElementById(`bulk${prefix}ProgressBar`);
+    const pctEl = document.getElementById(`bulk${prefix}ProgressPct`);
+    const textEl = document.getElementById(`bulk${prefix}ProgressText`);
+    const detailEl = document.getElementById(`bulk${prefix}ProgressDetail`);
+    if (bar) bar.style.width = p + '%';
+    if (pctEl) pctEl.textContent = p + '%';
+    if (textEl && text) textEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> ${tEsc(text)}`;
+    if (detailEl) detailEl.textContent = detail || '';
+}
+
+/** Clears the upload window for a fresh upload (keeps the mode / year / month). */
+function resetBulkModal(prefix) {
+    if (bulkSaving[prefix]) return;
+    const f = document.getElementById(`bulk${prefix}File`);
+    if (f) f.value = '';
+    onBulkModeChange(prefix);
+}
+
+/** "2. Save / Replace Data": cloud first, then this device, with a live progress bar. */
+async function commitBulkUpload(prefix) {
+    if (!requireAdmin('bulk import')) return;
+    const isAE = prefix === 'AE';
+    const pending = isAE ? pendingBulkAE : pendingBulkTAss;
+    const store = isAE ? 'aes' : 'tass';
+    const label = isAE ? 'Tourist Arrival' : 'Same-Day Visitor';
+    if (bulkSaving[prefix]) return;
+    if (!pending.length) {
+        showToast(`No valid ${isAE ? 'AE' : 'TAss'} records are ready for import. Click Process Excel first and check the preview/errors.`, 'warning');
+        return;
+    }
+
+    let started = false;
+    const progress = (pct, text, detail) => {
+        if (!started) {   // first call happens only AFTER the user confirmed the replace dialog
+            started = true;
+            bulkSaving[prefix] = true;
+            setBulkStep(prefix, 'saving');
+            updateCloudStatus('Saving to Cloud...');
+        }
+        updateBulkProgress(prefix, pct, text, detail);
+    };
+
+    try {
+        if (!confirmBulkBeforeSave(prefix, pending)) return;
+        const periods = getReportingPeriods(pending.map(i => i.record));
+        const periodText = compactPeriods(periods);
+        const savedCount = await replaceBulkByReportingPeriod(store, isAE ? aeRecords : tassRecords, pending, label, progress);
+        if (!savedCount) return;   // user cancelled the replace confirmation
+
+        progress(100, 'Upload complete', '');
+        bulkSaving[prefix] = false;
+        if (isAE) pendingBulkAE = []; else pendingBulkTAss = [];
+        bulkQuality[prefix] = null;
+        const detail = document.getElementById(`bulk${prefix}CompleteDetail`);
+        if (detail) detail.innerHTML = `<b>${savedCount.toLocaleString()}</b> ${label} record${savedCount === 1 ? '' : 's'} saved for <b>${tEsc(periodText)}</b>. Other months and years were not changed.`;
+        setBulkStep(prefix, 'done');
+        refreshAllViews();
+        showToast(`Upload complete: ${savedCount.toLocaleString()} ${label} records saved to the cloud.`, 'success');
+    } catch (err) {
+        console.error(err);
+        bulkSaving[prefix] = false;
+        updateCloudStatus('Cloud Save Failed');
+        if (started) {
+            setBulkStep(prefix, 'save');   // let the user press Save again
+            const box = document.getElementById(`bulk${prefix}ErrorLog`);
+            if (box) {
+                box.classList.remove('hidden');
+                box.innerHTML = `<strong>Saving was interrupted:</strong> ${tEsc(err.message)}<br>Part of the data may already have been written to the cloud. Click <b>2. Save / Replace Data</b> again to retry; it replaces those months cleanly.`;
+            }
+        }
+        showToast(`Unable to save ${label} data: ` + err.message, 'danger');
+    }
+}
+
 /** Upload window controls */
 function getBulkScope(prefix) {
     const picked = document.querySelector(`input[name="bulk${prefix}Mode"]:checked`);
@@ -835,10 +986,7 @@ function resetBulkPending(prefix) {
         const el = document.getElementById(`bulk${prefix}${s}`);
         if (el) el.classList.add('hidden');
     });
-    ['btnSaveBulk', 'btnConfirmBulk'].forEach(b => {
-        const el = document.getElementById(`${b}${prefix}`);
-        if (el) el.disabled = true;
-    });
+    setBulkStep(prefix, bulkHasFile(prefix) ? 'process' : 'file');
 }
 
 function onBulkModeChange(prefix) {
@@ -1212,9 +1360,11 @@ function populateFilterOptions() {
  */
 function openModal(modalId) {
     document.getElementById(modalId).classList.remove('hidden');
+    if (modalId === 'modalBulkAE') resetBulkModal('AE');
+    if (modalId === 'modalBulkTAss') resetBulkModal('TAss');
 }
 
-function closeModal(modalId) { const el=document.getElementById(modalId); if(!el)return; el.classList.add('hidden'); el.classList.remove('flex'); }
+function closeModal(modalId) { if((modalId==='modalBulkAE'&&bulkSaving.AE)||(modalId==='modalBulkTAss'&&bulkSaving.TAss)){showToast('Saving is in progress. Please wait until it finishes.','warning');return;} const el=document.getElementById(modalId); if(!el)return; el.classList.add('hidden'); el.classList.remove('flex'); }
 
 function downloadFile(content, fileName, mimeType) {
     const blob = new Blob([content], { type: mimeType });
@@ -1924,8 +2074,10 @@ async function saveAERecord(e) {
     const savedId = await putRecordToStore("aes", record);
     record.id = record.id || savedId;
     markDirty("aes", record.id);
+    let cloudOk = false;
     try {
         await setRecordToCloud("aes", record);
+        cloudOk = true;
         clearDirty("aes", [record.id]);
         updateCloudStatus("Cloud Saved", true);
     }
@@ -1933,7 +2085,7 @@ async function saveAERecord(e) {
     await loadAllRecords();
     closeModal('modalAE');
     refreshAllViews();
-    showToast("Accommodation Establishment record saved successfully.", "success");
+    showToast(cloudOk ? "Accommodation Establishment record saved and synced to the cloud." : "Accommodation Establishment record saved on this device. Click Save to Cloud to retry the cloud save.", cloudOk ? "success" : "warning");
 }
 
 function editAERecord(id) {
@@ -1990,15 +2142,14 @@ async function deleteAERecord(id) {
 async function processAEBulkExcel() {
     const fileInput = document.getElementById('bulkAEFile');
     if (!fileInput.files.length) { showToast("Please select an Excel file.", "warning"); return; }
+    setBulkProcessing('AE');
 
     try {
         const rows = await readExcelFile(fileInput.files[0]);
-        if (rows.length < 2) { showToast("Excel file is empty or missing data rows.", "warning"); return; }
+        if (rows.length < 2) { showToast("Excel file is empty or missing data rows.", "warning"); setBulkStep('AE', 'process'); return; }
 
         const headers = rows[0].map(normalizeExcelHeader);
         pendingBulkAE = [];
-        document.getElementById('btnSaveBulkAE').disabled = true;
-        document.getElementById('btnConfirmBulkAE').disabled = true;
         let newCount = 0, updateCount = 0, skippedCount = 0;
         const errors = [];
 
@@ -2108,36 +2259,15 @@ async function processAEBulkExcel() {
         } else {
             document.getElementById('bulkAEErrorLog').classList.add('hidden');
         }
-        document.getElementById('btnConfirmBulkAE').disabled = false;
-        document.getElementById('btnSaveBulkAE').disabled = false;
+        setBulkStep('AE', 'save');   // Process is grayed out; next step is Save / Replace Data
     } catch (err) {
         console.error(err);
+        setBulkStep('AE', 'process');
         showToast("Failed to read Excel file: " + err.message, "danger");
     }
 }
 
-async function commitAEBulkImport() {
-    if (!requireAdmin('bulk import')) return;
-    if (!pendingBulkAE.length) {
-        showToast("No valid AE records are ready for import. Click Process Excel first and check the preview/errors.", "warning");
-        return;
-    }
-    try {
-        if (!confirmBulkBeforeSave('AE', pendingBulkAE)) return;
-        const importCount = pendingBulkAE.length;
-        const replaced = await replaceBulkByReportingPeriod("aes", aeRecords, pendingBulkAE, "Tourist Arrival");
-        if (!replaced) return;
-        pendingBulkAE = [];
-        document.getElementById('btnSaveBulkAE').disabled = true;
-        document.getElementById('btnConfirmBulkAE').disabled = true;
-        closeModal('modalBulkAE');
-        refreshAllViews();
-        showToast(`Tourist Arrival import complete. ${importCount.toLocaleString()} records saved. Only the uploaded Year/Month period(s) were replaced.`, "success");
-    } catch (err) {
-        console.error(err);
-        showToast("Unable to save Tourist Arrival data: " + err.message, "danger");
-    }
-}
+async function commitAEBulkImport() { return commitBulkUpload('AE'); }
 
 function exportAEsExcel(year=null,month='ALL'){if(!requireAdmin('download data'))return;const source=year==null?aeRecords:aeRecords.filter(r=>Number(r.year)===Number(year)&&(month==='ALL'||Number(r.month)===Number(month)));if(!source.length){showToast('No Tourist Arrival records match the selected period.','warning');return;}const headers=["Province","Municipality","Year","Month","Accommodation Establishment","Type Class","Local Tourist","Foreign Tourist","Overseas Filipino","Total (L+F+Overseas)","Total Male","Total Female","Total (M+F)"];const rows=source.map(r=>[r.province,r.municipality,r.year,MONTH_NAMES[r.month-1],r.establishment,r.type_class||'',Number(r.local_tourist||0),Number(r.foreign_tourist||0),Number(r.overseas_filipino||0),Number(r.local_tourist||0)+Number(r.foreign_tourist||0)+Number(r.overseas_filipino||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.total_mf||0)]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,makeDataSheet(headers,rows,[2,6,7,8,9,10,11,12]),'AEs Data');XLSX.utils.book_append_sheet(wb,makeInfoSheet('Tourist Arrivals – Accommodation Establishments (AEs)',`Export period: ${year==null?'All Saved Data':`${year} - ${month==='ALL'?'All Months':MONTH_NAMES[month-1]}`}`),'Info');saveWorkbook(wb,`Tourist_Arrivals_AEs_${year==null?'All_Data':`${year}_${month==='ALL'?'All_Months':MONTH_NAMES[month-1]}`}.xlsx`);}
 
@@ -2298,8 +2428,10 @@ async function saveTAssRecord(e) {
     const savedId = await putRecordToStore("tass", record);
     record.id = record.id || savedId;
     markDirty("tass", record.id);
+    let cloudOk = false;
     try {
         await setRecordToCloud("tass", record);
+        cloudOk = true;
         clearDirty("tass", [record.id]);
         updateCloudStatus("Cloud Saved", true);
     }
@@ -2307,7 +2439,7 @@ async function saveTAssRecord(e) {
     await loadAllRecords();
     closeModal('modalTAss');
     refreshAllViews();
-    showToast("Same-Day Visitor record saved successfully.", "success");
+    showToast(cloudOk ? "Same-Day Visitor record saved and synced to the cloud." : "Same-Day Visitor record saved on this device. Click Save to Cloud to retry the cloud save.", cloudOk ? "success" : "warning");
 }
 
 function editTAssRecord(id) {
@@ -2364,15 +2496,14 @@ async function deleteTAssRecord(id) {
 async function processTAssBulkExcel() {
     const fileInput = document.getElementById('bulkTAssFile');
     if (!fileInput.files.length) { showToast("Please select an Excel file.", "warning"); return; }
+    setBulkProcessing('TAss');
 
     try {
         const rows = await readExcelFile(fileInput.files[0]);
-        if (rows.length < 2) { showToast("Excel file is empty or missing data rows.", "warning"); return; }
+        if (rows.length < 2) { showToast("Excel file is empty or missing data rows.", "warning"); setBulkStep('TAss', 'process'); return; }
 
         const headers = rows[0].map(normalizeExcelHeader);
         pendingBulkTAss = [];
-        document.getElementById('btnSaveBulkTAss').disabled = true;
-        document.getElementById('btnConfirmBulkTAss').disabled = true;
         let newCount = 0, updateCount = 0, skippedCount = 0;
         const errors = [];
 
@@ -2488,36 +2619,15 @@ async function processTAssBulkExcel() {
         } else {
             document.getElementById('bulkTAssErrorLog').classList.add('hidden');
         }
-        document.getElementById('btnConfirmBulkTAss').disabled = false;
-        document.getElementById('btnSaveBulkTAss').disabled = false;
+        setBulkStep('TAss', 'save');   // Process is grayed out; next step is Save / Replace Data
     } catch (err) {
         console.error(err);
+        setBulkStep('TAss', 'process');
         showToast("Failed to read Excel file: " + err.message, "danger");
     }
 }
 
-async function commitTAssBulkImport() {
-    if (!requireAdmin('bulk import')) return;
-    if (!pendingBulkTAss.length) {
-        showToast("No valid TAss records are ready for import. Click Process Excel first and check the preview/errors.", "warning");
-        return;
-    }
-    try {
-        if (!confirmBulkBeforeSave('TAss', pendingBulkTAss)) return;
-        const importCount = pendingBulkTAss.length;
-        const replaced = await replaceBulkByReportingPeriod("tass", tassRecords, pendingBulkTAss, "Same-Day Visitor");
-        if (!replaced) return;
-        pendingBulkTAss = [];
-        document.getElementById('btnSaveBulkTAss').disabled = true;
-        document.getElementById('btnConfirmBulkTAss').disabled = true;
-        closeModal('modalBulkTAss');
-        refreshAllViews();
-        showToast(`Same-Day Visitor import complete. ${importCount.toLocaleString()} records saved. Only the uploaded Year/Month period(s) were replaced.`, "success");
-    } catch (err) {
-        console.error(err);
-        showToast("Unable to save Same-Day Visitor data: " + err.message, "danger");
-    }
-}
+async function commitTAssBulkImport() { return commitBulkUpload('TAss'); }
 
 function exportTAssExcel(year=null,month='ALL'){if(!requireAdmin('download data'))return;const source=year==null?tassRecords:tassRecords.filter(r=>Number(r.year)===Number(year)&&(month==='ALL'||Number(r.month)===Number(month)));if(!source.length){showToast('No Same-Day Visitor records match the selected period.','warning');return;}const headers=["Province","Municipality","Year","Month","Tourist Attraction","TM(M)","TM(F)","TM(SUM)","OM(M)","OM(F)","OM(SUM)","FCR(M)","FCR(F)","FCR(SUM)","Total Male","Total Female","Grand Total"];const rows=source.map(r=>[r.province,r.municipality,r.year,MONTH_NAMES[r.month-1],r.attraction,Number(r.tm_m||0),Number(r.tm_f||0),Number(r.tm_sum||0),Number(r.om_m||0),Number(r.om_f||0),Number(r.om_sum||0),Number(r.fcr_m||0),Number(r.fcr_f||0),Number(r.fcr_sum||0),Number(r.total_male||0),Number(r.total_female||0),Number(r.grand_total||0)]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,makeDataSheet(headers,rows,[2,5,6,7,8,9,10,11,12,13,14,15,16]),'TAss Data');XLSX.utils.book_append_sheet(wb,makeInfoSheet('Same-Day Visitors – Tourist Attraction Arrivals (TAss)',`Export period: ${year==null?'All Saved Data':`${year} - ${month==='ALL'?'All Months':MONTH_NAMES[month-1]}`}`),'Info');saveWorkbook(wb,`SameDay_Visitors_TAss_${year==null?'All_Data':`${year}_${month==='ALL'?'All_Months':MONTH_NAMES[month-1]}`}.xlsx`);}
 
