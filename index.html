@@ -1369,11 +1369,41 @@
             <div class="p-5 overflow-y-auto space-y-4 custom-scrollbar text-xs">
                 <div class="bg-blue-50 border border-blue-200 p-3 rounded-lg text-blue-800 space-y-1">
                     <p class="font-bold"><i class="fa-solid fa-circle-info mr-1"></i> Unique Key Matching Rule:</p>
-                    <p>Upload the Excel file, click <strong>1. Process Excel</strong> to preview it, then click <strong>2. Save / Replace Data</strong>. The uploaded <strong>Year + Month</strong> will replace the existing period only. All other months and years remain unchanged.</p>
+                    <p>Choose the <strong>Upload Mode</strong> and the Year (and Month), select the Excel file, click <strong>1. Process Excel</strong> to preview it, then click <strong>2. Save / Replace Data</strong>. Only the <strong>Year + Month</strong> period(s) in the file are replaced; all other months and years remain unchanged. Duplicate or similar names are flagged before saving.</p>
+                </div>
+
+                <!-- Upload mode: single month or bulk (multiple months) -->
+                <div class="border border-slate-200 rounded-lg p-3 space-y-3 bg-slate-50">
+                    <p class="font-bold text-slate-700"><i class="fa-solid fa-sliders mr-1 text-teal-600"></i> Upload Mode</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label class="flex items-start gap-2 p-2.5 rounded-lg border border-slate-300 bg-white cursor-pointer has-[:checked]:border-teal-500 has-[:checked]:bg-teal-50">
+                            <input type="radio" name="bulkAEMode" value="single" checked onchange="onBulkModeChange('AE')" class="mt-0.5">
+                            <span><strong>Single Month</strong><br><span class="text-slate-500">One Year + Month only (e.g. 2022 &ndash; January). The file must contain just that month.</span></span>
+                        </label>
+                        <label class="flex items-start gap-2 p-2.5 rounded-lg border border-slate-300 bg-white cursor-pointer has-[:checked]:border-teal-500 has-[:checked]:bg-teal-50">
+                            <input type="radio" name="bulkAEMode" value="bulk" onchange="onBulkModeChange('AE')" class="mt-0.5">
+                            <span><strong>Bulk (Multiple Months)</strong><br><span class="text-slate-500">One Year with several months (e.g. 2022 &ndash; January to December) in a single file.</span></span>
+                        </label>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <label class="font-semibold text-slate-600 flex items-center gap-1.5">Year
+                            <input type="number" id="bulkAEYear" min="2000" max="2100" placeholder="e.g. 2022" onchange="onBulkModeChange('AE')" class="w-28 text-xs bg-white border border-slate-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-teal-500">
+                        </label>
+                        <label id="bulkAEMonthWrap" class="font-semibold text-slate-600 flex items-center gap-1.5">Month
+                            <select id="bulkAEMonth" onchange="onBulkModeChange('AE')" class="text-xs bg-white border border-slate-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-teal-500">
+                                <option value="">&mdash; Select month &mdash;</option>
+                                <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+                                <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+                                <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+                                <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+                            </select>
+                        </label>
+                        <span id="bulkAEScopeHint" class="text-slate-500">The file must contain only this one Year + Month.</span>
+                    </div>
                 </div>
 
                 <div class="flex items-center space-x-3">
-                    <input type="file" id="bulkAEFile" accept=".xlsx,.xls" class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100">
+                    <input type="file" id="bulkAEFile" accept=".xlsx,.xls" onchange="resetBulkPending('AE')" class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100">
                     <button onclick="processAEBulkExcel()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg font-medium">1. Process Excel</button>
                     <button id="btnSaveBulkAE" onclick="commitAEBulkImport()" disabled class="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-bold">2. Save / Replace Data</button>
                     <button onclick="downloadAETemplate()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium"><i class="fa-solid fa-file-excel mr-1"></i> Excel Template</button>
@@ -1385,6 +1415,8 @@
                     <div class="p-2 bg-amber-100 text-amber-800 rounded"><span id="bulkAEUpdateCount">0</span> Updated Records</div>
                     <div class="p-2 bg-rose-100 text-rose-800 rounded"><span id="bulkAESkippedCount">0</span> Rejected/Errors</div>
                 </div>
+
+                <div id="bulkAEQualityLog" class="hidden"></div>
 
                 <div id="bulkAEPreviewContainer" class="hidden overflow-x-auto max-h-60 border rounded custom-scrollbar">
                     <table class="w-full text-left text-[11px] border-collapse">
@@ -1423,11 +1455,41 @@
             <div class="p-5 overflow-y-auto space-y-4 custom-scrollbar text-xs">
                 <div class="bg-blue-50 border border-blue-200 p-3 rounded-lg text-blue-800 space-y-1">
                     <p class="font-bold"><i class="fa-solid fa-circle-info mr-1"></i> Unique Key Matching Rule:</p>
-                    <p>Upload the Excel file, click <strong>1. Process Excel</strong> to preview it, then click <strong>2. Save / Replace Data</strong>. The uploaded <strong>Year + Month</strong> will replace the existing period only. All other months and years remain unchanged.</p>
+                    <p>Choose the <strong>Upload Mode</strong> and the Year (and Month), select the Excel file, click <strong>1. Process Excel</strong> to preview it, then click <strong>2. Save / Replace Data</strong>. Only the <strong>Year + Month</strong> period(s) in the file are replaced; all other months and years remain unchanged. Duplicate or similar names are flagged before saving.</p>
+                </div>
+
+                <!-- Upload mode: single month or bulk (multiple months) -->
+                <div class="border border-slate-200 rounded-lg p-3 space-y-3 bg-slate-50">
+                    <p class="font-bold text-slate-700"><i class="fa-solid fa-sliders mr-1 text-teal-600"></i> Upload Mode</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label class="flex items-start gap-2 p-2.5 rounded-lg border border-slate-300 bg-white cursor-pointer has-[:checked]:border-teal-500 has-[:checked]:bg-teal-50">
+                            <input type="radio" name="bulkTAssMode" value="single" checked onchange="onBulkModeChange('TAss')" class="mt-0.5">
+                            <span><strong>Single Month</strong><br><span class="text-slate-500">One Year + Month only (e.g. 2022 &ndash; January). The file must contain just that month.</span></span>
+                        </label>
+                        <label class="flex items-start gap-2 p-2.5 rounded-lg border border-slate-300 bg-white cursor-pointer has-[:checked]:border-teal-500 has-[:checked]:bg-teal-50">
+                            <input type="radio" name="bulkTAssMode" value="bulk" onchange="onBulkModeChange('TAss')" class="mt-0.5">
+                            <span><strong>Bulk (Multiple Months)</strong><br><span class="text-slate-500">One Year with several months (e.g. 2022 &ndash; January to December) in a single file.</span></span>
+                        </label>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <label class="font-semibold text-slate-600 flex items-center gap-1.5">Year
+                            <input type="number" id="bulkTAssYear" min="2000" max="2100" placeholder="e.g. 2022" onchange="onBulkModeChange('TAss')" class="w-28 text-xs bg-white border border-slate-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-teal-500">
+                        </label>
+                        <label id="bulkTAssMonthWrap" class="font-semibold text-slate-600 flex items-center gap-1.5">Month
+                            <select id="bulkTAssMonth" onchange="onBulkModeChange('TAss')" class="text-xs bg-white border border-slate-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-teal-500">
+                                <option value="">&mdash; Select month &mdash;</option>
+                                <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+                                <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+                                <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+                                <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+                            </select>
+                        </label>
+                        <span id="bulkTAssScopeHint" class="text-slate-500">The file must contain only this one Year + Month.</span>
+                    </div>
                 </div>
 
                 <div class="flex items-center space-x-3">
-                    <input type="file" id="bulkTAssFile" accept=".xlsx,.xls" class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100">
+                    <input type="file" id="bulkTAssFile" accept=".xlsx,.xls" onchange="resetBulkPending('TAss')" class="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100">
                     <button onclick="processTAssBulkExcel()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg font-medium">1. Process Excel</button>
                     <button id="btnSaveBulkTAss" onclick="commitTAssBulkImport()" disabled class="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-bold">2. Save / Replace Data</button>
                     <button onclick="downloadTAssTemplate()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg font-medium"><i class="fa-solid fa-file-excel mr-1"></i> Excel Template</button>
@@ -1439,6 +1501,8 @@
                     <div class="p-2 bg-amber-100 text-amber-800 rounded"><span id="bulkTAssUpdateCount">0</span> Updated Records</div>
                     <div class="p-2 bg-rose-100 text-rose-800 rounded"><span id="bulkTAssSkippedCount">0</span> Rejected/Errors</div>
                 </div>
+
+                <div id="bulkTAssQualityLog" class="hidden"></div>
 
                 <div id="bulkTAssPreviewContainer" class="hidden overflow-x-auto max-h-60 border rounded custom-scrollbar">
                     <table class="w-full text-left text-[11px] border-collapse">

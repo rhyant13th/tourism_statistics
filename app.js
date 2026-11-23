@@ -634,14 +634,283 @@ function replacePeriodsInStore(storeName,records,periods){
 async function replaceBulkByReportingPeriod(storeName,inMemoryRecords,pendingItems,label){
     let newRecords=dedupePendingRecords(storeName,pendingItems.map(item=>item.record)); const periods=getReportingPeriods(newRecords);
     if(!periods.length)throw new Error('No valid reporting period found in the upload.');
-    if(periods.length>1)throw new Error(`The upload contains ${periods.length} reporting periods (${formatReportingPeriods(periods)}). Please upload one Year + Month per file.`);
-    const existingCount=countRecordsForPeriods(inMemoryRecords,periods), periodText=formatReportingPeriods(periods);
+    // Multiple Year + Month periods in one file are allowed: only the periods found in the file are replaced.
+    const existingCount=countRecordsForPeriods(inMemoryRecords,periods), periodText=formatReportingPeriods(periods)+(periods.length>1?` (${periods.length} months)`:'');
     const message=existingCount>0?`Existing ${label} data was found for ${periodText}.\n\nThis will REPLACE ALL existing ${label} records for ${periodText}.\n\nOld records: ${existingCount.toLocaleString()}\nNew records: ${newRecords.length.toLocaleString()}\n\nOther months and years will remain unchanged.\n\nContinue?`:`This will save ${newRecords.length.toLocaleString()} ${label} records for ${periodText}.\n\nOther months and years will remain unchanged.\n\nContinue?`;
     if(!confirm(message))return false;
     // Cloud is the shared master copy. Only after the cloud replacement
     // succeeds do we update this browser's IndexedDB cache.
     await replacePeriodInCloud(storeName, newRecords, periods);
     const savedRecords=await replacePeriodsInStore(storeName,newRecords,periods); const periodKeys=new Set(periods.map(p=>`${p.year}-${p.month}`)); const retained=inMemoryRecords.filter(r=>!periodKeys.has(`${Number(r.year)}-${Number(r.month)}`)); inMemoryRecords.splice(0,inMemoryRecords.length,...retained,...savedRecords); updateCloudStatus("Cloud Saved", true); return true;
+}
+
+// ##############################################################################
+// ##### SECTION: UPLOAD-GUARD
+// ##############################################################################
+
+/**
+ * UPLOAD GUARD (bulk upload of AEs and TAss):
+ *  1. Upload Mode  -> "Single Month" (one Year + Month) or "Bulk" (one Year, many months)
+ *  2. Period check -> the file must match the mode/year/month chosen in the upload window
+ *  3. Name check   -> warns about exact duplicates and SIMILAR names
+ *                     (e.g. "Seasons Hotel" / "Seasons Hotels" / "Season Inn")
+ * `prefix` is 'AE' or 'TAss' and matches the element ids in the two upload windows.
+ */
+const bulkQuality = { AE: null, TAss: null };
+const BULK_CFG = {
+    AE:   { store: 'aes',  subject: 'establishment', subjectLabel: 'establishment', useTypeWords: true },
+    TAss: { store: 'tass', subject: 'attraction',    subjectLabel: 'attraction',    useTypeWords: false }
+};
+
+// Words that only describe the TYPE of accommodation (compared after removing a trailing "s").
+// "Seasons Hotel" and "Season Inn" both reduce to "season", so they are flagged for review.
+const NAME_TYPE_WORDS = new Set([
+    'hotel', 'inn', 'resort', 'lodge', 'lodging', 'house', 'hostel', 'pension', 'pensionne', 'apartelle',
+    'homestay', 'home', 'stay', 'guesthouse', 'guest', 'inc', 'restaurant', 'and', 'the', 'of', 'beach',
+    'cafe', 'suite', 'transient', 'room', 'tourist'
+]);
+const NAME_SYNONYMS = { mt: 'mount', st: 'saint', brgy: 'barangay' };
+
+/** Lower-case words of a name: punctuation removed, "&" -> "and", plural "s" removed. */
+function nameTokens(name) {
+    const base = String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/['’`]s\b/g, 's').replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+    return base.split(' ').filter(Boolean)
+        .map(t => NAME_SYNONYMS[t] || t)
+        .map(t => (t.length > 3 && t.endsWith('s') && !t.endsWith('ss')) ? t.slice(0, -1) : t);
+}
+
+function levenshtein(a, b) {
+    if (a === b) return 0;
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+        const cur = [i];
+        for (let j = 1; j <= b.length; j++) {
+            cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        }
+        prev = cur;
+    }
+    return prev[b.length];
+}
+
+/** Returns a short reason when two DIFFERENT names look like the same place, otherwise null. */
+function compareNames(a, b, useTypeWords) {
+    const ta = nameTokens(a), tb = nameTokens(b);
+    if (!ta.length || !tb.length) return null;
+    // "Hotel 1" vs "Hotel 2": different numbers always means different places
+    const numsA = ta.filter(t => /\d/.test(t)).join(','), numsB = tb.filter(t => /\d/.test(t)).join(',');
+    if (numsA !== numsB) return null;
+    if ([...ta].sort().join(' ') === [...tb].sort().join(' ')) return 'same words (spelling, plural or word order differs)';
+    const sa = ta.join(''), sb = tb.join('');
+    const dist = levenshtein(sa, sb), longest = Math.max(sa.length, sb.length);
+    if (Math.min(sa.length, sb.length) >= 6 && (dist <= 2 || dist / longest <= 0.12)) return 'very similar spelling';
+    if (useTypeWords) {
+        const ca = ta.filter(t => !NAME_TYPE_WORDS.has(t)), cb = tb.filter(t => !NAME_TYPE_WORDS.has(t));
+        if (ca.length && cb.length && ca.join(' ') === cb.join(' ')) return 'same name with a different type word (Hotel / Inn / Resort)';
+    }
+    return null;
+}
+
+/** Finds exact duplicates and similar names. Marks rows with item.flag ('dup' | 'similar'). */
+function analyzeUploadNames(prefix, items, existingRecords, periods) {
+    const cfg = BULK_CFG[prefix], key = cfg.subject;
+    const issues = { duplicates: [], similar: [], vsExisting: [] };
+    items.forEach(it => { it.flag = null; });
+
+    // 1) Exact duplicates inside the file (same municipality + month + name)
+    const seen = new Map();
+    items.forEach(it => {
+        const k = recordUniqueKey(cfg.store, it.record);
+        if (!seen.has(k)) seen.set(k, []);
+        seen.get(k).push(it);
+    });
+    seen.forEach(list => {
+        if (list.length < 2) return;
+        list.forEach(it => { it.flag = 'dup'; });
+        const r = list[0].record;
+        issues.duplicates.push({ muni: r.municipality, name: r[key], period: `${MONTH_NAMES[r.month - 1]} ${r.year}`, rows: list.map(x => x.row) });
+    });
+
+    // 2) Similar names inside the file (compared within the same municipality)
+    const byMuni = new Map();
+    items.forEach(it => {
+        const r = it.record, mk = String(r.municipality).trim().toLowerCase(), nk = String(r[key]).trim().toLowerCase();
+        if (!byMuni.has(mk)) byMuni.set(mk, { muni: r.municipality, names: new Map() });
+        const names = byMuni.get(mk).names;
+        if (!names.has(nk)) names.set(nk, { name: String(r[key]).trim(), items: [] });
+        names.get(nk).items.push(it);
+    });
+    byMuni.forEach(({ muni, names }) => {
+        const list = [...names.values()];
+        for (let i = 0; i < list.length; i++) {
+            for (let j = i + 1; j < list.length; j++) {
+                const why = compareNames(list[i].name, list[j].name, cfg.useTypeWords);
+                if (!why) continue;
+                list[i].items.concat(list[j].items).forEach(it => { if (!it.flag) it.flag = 'similar'; });
+                issues.similar.push({ muni, a: list[i].name, b: list[j].name, why, aCount: list[i].items.length, bCount: list[j].items.length });
+            }
+        }
+    });
+
+    // 3) Names in the file that look like names ALREADY SAVED for other months/years
+    //    (periods being replaced by this upload are ignored, because they will be overwritten)
+    const periodKeys = new Set(periods.map(p => `${p.year}-${p.month}`));
+    const existingByMuni = new Map();
+    existingRecords.forEach(r => {
+        if (periodKeys.has(`${Number(r.year)}-${Number(r.month)}`)) return;
+        const nk = String(r[key] || '').trim().toLowerCase();
+        if (!nk) return;
+        const mk = String(r.municipality).trim().toLowerCase();
+        if (!existingByMuni.has(mk)) existingByMuni.set(mk, new Map());
+        const m = existingByMuni.get(mk);
+        if (!m.has(nk)) m.set(nk, { name: String(r[key]).trim(), years: new Set() });
+        m.get(nk).years.add(Number(r.year));
+    });
+    byMuni.forEach(({ muni, names }, mk) => {
+        const ex = existingByMuni.get(mk);
+        if (!ex) return;
+        names.forEach((entry, nk) => {
+            if (ex.has(nk)) return;   // identical name already saved = same place, expected
+            for (const e of ex.values()) {
+                const why = compareNames(entry.name, e.name, cfg.useTypeWords);
+                if (!why) continue;
+                entry.items.forEach(it => { if (!it.flag) it.flag = 'similar'; });
+                issues.vsExisting.push({ muni, name: entry.name, existing: e.name, years: [...e.years].sort().join(', '), why });
+                break;
+            }
+        });
+    });
+    return issues;
+}
+
+function renderUploadQuality(prefix, issues, scopeText) {
+    const el = document.getElementById(`bulk${prefix}QualityLog`);
+    if (!el) return;
+    const label = BULK_CFG[prefix].subjectLabel;
+    const total = issues.duplicates.length + issues.similar.length + issues.vsExisting.length;
+    const list = (arr, fn) => `<ul class="list-disc ml-5 space-y-0.5">${arr.slice(0, 20).map(fn).join('')}${arr.length > 20 ? `<li class="italic">…and ${arr.length - 20} more</li>` : ''}</ul>`;
+    const q = s => `&ldquo;${tEsc(s)}&rdquo;`;
+
+    let html = `<p class="font-bold text-blue-800 mb-1"><i class="fa-solid fa-circle-check mr-1"></i> ${tEsc(scopeText)}</p>`;
+    if (!total) {
+        html += `<p class="text-emerald-700 font-semibold"><i class="fa-solid fa-check mr-1"></i> No duplicate or similar ${label} names found.</p>`;
+    } else {
+        html += `<p class="font-bold text-amber-800"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Duplicate / similar-name check: ${total} item(s) need your review before saving.</p>`;
+        if (issues.duplicates.length) {
+            html += `<p class="font-semibold mt-2 text-rose-700">Exact duplicates (${issues.duplicates.length}) &ndash; the same ${label} appears more than once in the same month. Only the LAST row of each will be saved:</p>` +
+                list(issues.duplicates, d => `<li><b>${tEsc(d.muni)}</b>: ${q(d.name)} &ndash; ${tEsc(d.period)}, Excel rows ${d.rows.join(', ')}</li>`);
+        }
+        if (issues.similar.length) {
+            html += `<p class="font-semibold mt-2">Similar names in this file (${issues.similar.length}) &ndash; may be the same ${label} typed differently:</p>` +
+                list(issues.similar, s => `<li><b>${tEsc(s.muni)}</b>: ${q(s.a)} (${s.aCount} row${s.aCount > 1 ? 's' : ''}) &harr; ${q(s.b)} (${s.bCount} row${s.bCount > 1 ? 's' : ''}) &ndash; <i>${s.why}</i></li>`);
+        }
+        if (issues.vsExisting.length) {
+            html += `<p class="font-semibold mt-2">Similar to names already saved (${issues.vsExisting.length}) &ndash; saving may create a second entry for the same ${label}:</p>` +
+                list(issues.vsExisting, s => `<li><b>${tEsc(s.muni)}</b>: ${q(s.name)} in this file &harr; ${q(s.existing)} already saved (${tEsc(s.years)}) &ndash; <i>${s.why}</i></li>`);
+        }
+        html += `<p class="mt-2">If they are the same ${label}, correct the spelling in Excel and click <b>1. Process Excel</b> again. If they are really different, you can still save.</p>`;
+    }
+    el.className = total
+        ? 'p-3 bg-amber-50 border border-amber-300 text-amber-900 rounded text-[11px] max-h-60 overflow-y-auto'
+        : 'p-3 bg-emerald-50 border border-emerald-200 text-slate-700 rounded text-[11px]';
+    el.innerHTML = html;
+}
+
+/** Upload window controls */
+function getBulkScope(prefix) {
+    const picked = document.querySelector(`input[name="bulk${prefix}Mode"]:checked`);
+    return {
+        mode: picked ? picked.value : 'single',
+        year: parseInt(document.getElementById(`bulk${prefix}Year`).value, 10) || 0,
+        month: parseInt(document.getElementById(`bulk${prefix}Month`).value, 10) || 0
+    };
+}
+
+function resetBulkPending(prefix) {
+    if (prefix === 'AE') pendingBulkAE = []; else pendingBulkTAss = [];
+    bulkQuality[prefix] = null;
+    ['Summary', 'PreviewContainer', 'ErrorLog', 'QualityLog'].forEach(s => {
+        const el = document.getElementById(`bulk${prefix}${s}`);
+        if (el) el.classList.add('hidden');
+    });
+    ['btnSaveBulk', 'btnConfirmBulk'].forEach(b => {
+        const el = document.getElementById(`${b}${prefix}`);
+        if (el) el.disabled = true;
+    });
+}
+
+function onBulkModeChange(prefix) {
+    const sc = getBulkScope(prefix);
+    const wrap = document.getElementById(`bulk${prefix}MonthWrap`);
+    if (wrap) wrap.classList.toggle('hidden', sc.mode !== 'single');
+    const hint = document.getElementById(`bulk${prefix}ScopeHint`);
+    if (hint) hint.textContent = sc.mode === 'single'
+        ? 'The file must contain only this one Year + Month.'
+        : 'The file may contain several months, but only this Year.';
+    resetBulkPending(prefix);   // settings changed: the old preview is no longer valid
+}
+
+/** Short period text: 1-3 periods are listed, more are shown as a range. */
+function compactPeriods(periods) {
+    if (periods.length <= 3) return formatReportingPeriods(periods);
+    const f = periods[0], l = periods[periods.length - 1];
+    return `${periods.length} months, ${MONTH_NAMES[f.month - 1]} ${f.year} to ${MONTH_NAMES[l.month - 1]} ${l.year}`;
+}
+
+/** Checks the file's Year/Month values against the chosen mode. */
+function checkBulkScope(prefix, records) {
+    const sc = getBulkScope(prefix);
+    const periods = getReportingPeriods(records);
+    if (!sc.year) return { ok: false, message: 'Please enter the Year for this upload.' };
+    if (sc.mode === 'single') {
+        if (!sc.month) return { ok: false, message: 'Please select the Month for a Single Month upload.' };
+        const wanted = `${MONTH_NAMES[sc.month - 1]} ${sc.year}`;
+        if (periods.some(p => p.year !== sc.year || p.month !== sc.month)) {
+            return { ok: false, message: `Single Month mode accepts only ${wanted}, but the file contains ${compactPeriods(periods)}. ${periods.length > 1 ? 'Switch to Bulk (Multiple Months) mode, or correct the file.' : 'Correct the Year/Month selection or the file.'}` };
+        }
+        return { ok: true, periods, text: `Single Month upload: ${wanted}` };
+    }
+    const other = periods.filter(p => p.year !== sc.year);
+    if (other.length) {
+        return { ok: false, message: `Bulk mode accepts one Year at a time (${sc.year}), but the file also contains: ${compactPeriods(other)}. Use one file per year.` };
+    }
+    const text = `Bulk upload: ${compactPeriods(periods)}` +
+        (periods.length === 1 ? ' - only one month found; use Single Month mode if that is intended' : '');
+    return { ok: true, periods, text };
+}
+
+function showBulkScopeError(prefix, message) {
+    resetBulkPending(prefix);
+    const box = document.getElementById(`bulk${prefix}ErrorLog`);
+    if (box) { box.classList.remove('hidden'); box.innerHTML = `<strong>Upload not accepted:</strong> ${tEsc(message)}`; }
+    showToast(message, 'danger');
+}
+
+function bulkPreviewItems(pending) {
+    return [...pending].sort((a, b) => (b.flag ? 1 : 0) - (a.flag ? 1 : 0)).slice(0, 50);   // flagged rows first
+}
+function bulkStatusCell(item) {
+    if (item.flag === 'dup') return '<td class="p-2 font-bold text-rose-600">Duplicate row</td>';
+    if (item.flag === 'similar') return '<td class="p-2 font-bold text-amber-600">Check name</td>';
+    return '<td class="p-2 text-slate-400">Valid</td>';
+}
+
+/** Runs just before saving: re-checks the period and asks the user to confirm any name warnings. */
+function confirmBulkBeforeSave(prefix, pending) {
+    const chk = checkBulkScope(prefix, pending.map(i => i.record));
+    if (!chk.ok) { showToast(chk.message, 'danger'); return false; }
+    const q = bulkQuality[prefix];
+    if (!q) return true;
+    const n = q.duplicates.length + q.similar.length + q.vsExisting.length;
+    if (!n) return true;
+    const label = BULK_CFG[prefix].subjectLabel;
+    return confirm(`WARNING: possible duplicate or similar ${label} names were found.\n\n` +
+        `• Exact duplicates: ${q.duplicates.length} (only the last row of each will be saved)\n` +
+        `• Similar names inside the file: ${q.similar.length}\n` +
+        `• Similar to names already saved: ${q.vsExisting.length}\n\n` +
+        `Please review the yellow warning box in the upload window.\n\nSave anyway?`);
 }
 
 /**
@@ -1796,13 +2065,19 @@ async function processAEBulkExcel() {
             );
 
             if (existing) {
-                pendingBulkAE.push({ record, isUpdate: true, existingId: existing.id });
+                pendingBulkAE.push({ record, isUpdate: true, existingId: existing.id, row: i + 1 });
                 updateCount++;
             } else {
-                pendingBulkAE.push({ record, isUpdate: false });
+                pendingBulkAE.push({ record, isUpdate: false, row: i + 1 });
                 newCount++;
             }
         }
+
+        // Upload Mode check (Single Month / Bulk) + duplicate / similar-name check
+        const scopeCheck = checkBulkScope('AE', pendingBulkAE.map(i => i.record));
+        if (!scopeCheck.ok) { showBulkScopeError('AE', scopeCheck.message); return; }
+        bulkQuality.AE = analyzeUploadNames('AE', pendingBulkAE, aeRecords, scopeCheck.periods);
+        renderUploadQuality('AE', bulkQuality.AE, scopeCheck.text);
 
         document.getElementById('bulkAENewCount').innerText = newCount;
         document.getElementById('bulkAEUpdateCount').innerText = updateCount;
@@ -1811,7 +2086,7 @@ async function processAEBulkExcel() {
 
         const previewBody = document.getElementById('bulkAEPreviewBody');
         previewBody.innerHTML = '';
-        pendingBulkAE.slice(0, 50).forEach(item => {
+        bulkPreviewItems(pendingBulkAE).forEach(item => {
             const r = item.record;
             previewBody.innerHTML += `<tr class="border-b">
                         <td class="p-2 font-bold ${item.isUpdate ? 'text-amber-600' : 'text-emerald-600'}">${item.isUpdate ? 'UPDATE' : 'NEW'}</td>
@@ -1821,7 +2096,7 @@ async function processAEBulkExcel() {
                         <td class="p-2">${r.local_tourist}</td>
                         <td class="p-2">${r.foreign_tourist}</td>
                         <td class="p-2 font-bold">${r.total_lf}</td>
-                        <td class="p-2 text-slate-400">Valid</td>
+                        ${bulkStatusCell(item)}
                     </tr>`;
         });
         document.getElementById('bulkAEPreviewContainer').classList.remove('hidden');
@@ -1848,6 +2123,7 @@ async function commitAEBulkImport() {
         return;
     }
     try {
+        if (!confirmBulkBeforeSave('AE', pendingBulkAE)) return;
         const importCount = pendingBulkAE.length;
         const replaced = await replaceBulkByReportingPeriod("aes", aeRecords, pendingBulkAE, "Tourist Arrival");
         if (!replaced) return;
@@ -1856,7 +2132,7 @@ async function commitAEBulkImport() {
         document.getElementById('btnConfirmBulkAE').disabled = true;
         closeModal('modalBulkAE');
         refreshAllViews();
-        showToast(`Tourist Arrival import complete. ${importCount.toLocaleString()} records saved. Only the uploaded Year/Month period was replaced.`, "success");
+        showToast(`Tourist Arrival import complete. ${importCount.toLocaleString()} records saved. Only the uploaded Year/Month period(s) were replaced.`, "success");
     } catch (err) {
         console.error(err);
         showToast("Unable to save Tourist Arrival data: " + err.message, "danger");
@@ -2168,13 +2444,19 @@ async function processTAssBulkExcel() {
             );
 
             if (existing) {
-                pendingBulkTAss.push({ record, isUpdate: true, existingId: existing.id });
+                pendingBulkTAss.push({ record, isUpdate: true, existingId: existing.id, row: i + 1 });
                 updateCount++;
             } else {
-                pendingBulkTAss.push({ record, isUpdate: false });
+                pendingBulkTAss.push({ record, isUpdate: false, row: i + 1 });
                 newCount++;
             }
         }
+
+        // Upload Mode check (Single Month / Bulk) + duplicate / similar-name check
+        const scopeCheck = checkBulkScope('TAss', pendingBulkTAss.map(i => i.record));
+        if (!scopeCheck.ok) { showBulkScopeError('TAss', scopeCheck.message); return; }
+        bulkQuality.TAss = analyzeUploadNames('TAss', pendingBulkTAss, tassRecords, scopeCheck.periods);
+        renderUploadQuality('TAss', bulkQuality.TAss, scopeCheck.text);
 
         document.getElementById('bulkTAssNewCount').innerText = newCount;
         document.getElementById('bulkTAssUpdateCount').innerText = updateCount;
@@ -2183,7 +2465,7 @@ async function processTAssBulkExcel() {
 
         const previewBody = document.getElementById('bulkTAssPreviewBody');
         previewBody.innerHTML = '';
-        pendingBulkTAss.slice(0, 50).forEach(item => {
+        bulkPreviewItems(pendingBulkTAss).forEach(item => {
             const r = item.record;
             previewBody.innerHTML += `<tr class="border-b">
                         <td class="p-2 font-bold ${item.isUpdate ? 'text-amber-600' : 'text-emerald-600'}">${item.isUpdate ? 'UPDATE' : 'NEW'}</td>
@@ -2194,7 +2476,7 @@ async function processTAssBulkExcel() {
                         <td class="p-2">${r.om_sum}</td>
                         <td class="p-2">${r.fcr_sum}</td>
                         <td class="p-2 font-bold">${r.grand_total}</td>
-                        <td class="p-2 text-slate-400">Valid</td>
+                        ${bulkStatusCell(item)}
                     </tr>`;
         });
         document.getElementById('bulkTAssPreviewContainer').classList.remove('hidden');
@@ -2221,6 +2503,7 @@ async function commitTAssBulkImport() {
         return;
     }
     try {
+        if (!confirmBulkBeforeSave('TAss', pendingBulkTAss)) return;
         const importCount = pendingBulkTAss.length;
         const replaced = await replaceBulkByReportingPeriod("tass", tassRecords, pendingBulkTAss, "Same-Day Visitor");
         if (!replaced) return;
@@ -2229,7 +2512,7 @@ async function commitTAssBulkImport() {
         document.getElementById('btnConfirmBulkTAss').disabled = true;
         closeModal('modalBulkTAss');
         refreshAllViews();
-        showToast(`Same-Day Visitor import complete. ${importCount.toLocaleString()} records saved. Only the uploaded Year/Month period was replaced.`, "success");
+        showToast(`Same-Day Visitor import complete. ${importCount.toLocaleString()} records saved. Only the uploaded Year/Month period(s) were replaced.`, "success");
     } catch (err) {
         console.error(err);
         showToast("Unable to save Same-Day Visitor data: " + err.message, "danger");
